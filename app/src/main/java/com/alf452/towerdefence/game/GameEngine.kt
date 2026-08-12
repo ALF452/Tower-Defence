@@ -13,7 +13,13 @@ import kotlin.random.Random
 
 enum class GameState { INTERMISSION, PLAYING, GAME_OVER }
 
-private class Crater(val x: Float, val y: Float, val radius: Float)
+/**
+ * A jagged (not perfectly round) impact crater: [floorPath] is the ragged crater rim/floor
+ * outline, [scorchPath] a larger, looser ring around it standing in for blast-scorched
+ * regolith. Both are built once at generation time so drawing them is just two cheap
+ * [android.graphics.Canvas.drawPath] calls with no per-frame allocation.
+ */
+private class Crater(val floorPath: Path, val scorchPath: Path, val rimStrokeWidth: Float)
 private class Star(val x: Float, val y: Float, val radius: Float, val phase: Float, val speed: Float)
 
 /**
@@ -144,9 +150,36 @@ class GameEngine {
             // Keep clear of the castle/ring area in the middle so craters never sit under it.
             val dist = ringRadius() * 1.6f + rng.nextFloat() * (radius * 0.88f - ringRadius() * 1.6f)
             val craterRadius = radius * (0.035f + rng.nextFloat() * 0.09f)
-            list.add(Crater(castle.x + dist * cos(angle), castle.y + dist * sin(angle), craterRadius))
+            list.add(buildCrater(castle.x + dist * cos(angle), castle.y + dist * sin(angle), craterRadius, rng))
         }
         return list
+    }
+
+    /**
+     * Builds a jagged, irregular crater instead of a perfect circle: the rim/floor outline
+     * and the looser scorched-blast ring around it both walk the same set of angles but jitter
+     * their radius independently and unevenly, so the edge reads as broken/ragged rather than
+     * smooth, like ground actually torn up and scorched by an impact.
+     */
+    private fun buildCrater(cx: Float, cy: Float, r: Float, rng: Random): Crater {
+        val vertexCount = 9 + rng.nextInt(6)
+        val floorPath = Path()
+        val scorchPath = Path()
+        for (i in 0 until vertexCount) {
+            val a = (2f * Math.PI * i / vertexCount).toFloat()
+            val floorJitter = 0.62f + rng.nextFloat() * 0.66f
+            val fx = cx + r * floorJitter * cos(a)
+            val fy = cy + r * floorJitter * sin(a)
+            if (i == 0) floorPath.moveTo(fx, fy) else floorPath.lineTo(fx, fy)
+
+            val scorchJitter = 1.3f + rng.nextFloat() * 0.7f
+            val sx = cx + r * scorchJitter * cos(a)
+            val sy = cy + r * scorchJitter * sin(a)
+            if (i == 0) scorchPath.moveTo(sx, sy) else scorchPath.lineTo(sx, sy)
+        }
+        floorPath.close()
+        scorchPath.close()
+        return Crater(floorPath, scorchPath, r * 0.16f)
     }
 
     private fun generateStars(): List<Star> {
@@ -472,16 +505,20 @@ class GameEngine {
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
 
         for (c in craters) {
-            paint.color = Color.rgb(108, 111, 122)
-            canvas.drawCircle(c.x, c.y, c.radius, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = c.radius * 0.22f
-            paint.color = Color.rgb(90, 93, 104)
-            canvas.drawCircle(c.x, c.y, c.radius * 0.8f, paint)
+            // Scorched blast halo: a loose, irregular dark ring bleeding out past the crater
+            // edge, like burnt/torn-up regolith thrown out by the impact.
             paint.style = Paint.Style.FILL
-            // Small highlight crescent to hint at a light source, like a real crater rim.
-            paint.color = Color.argb(70, 200, 202, 212)
-            canvas.drawCircle(c.x - c.radius * 0.3f, c.y - c.radius * 0.3f, c.radius * 0.32f, paint)
+            paint.color = Color.argb(80, 42, 34, 28)
+            canvas.drawPath(c.scorchPath, paint)
+
+            paint.color = Color.rgb(92, 95, 104)
+            canvas.drawPath(c.floorPath, paint)
+
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = c.rimStrokeWidth
+            paint.color = Color.rgb(58, 52, 46)
+            canvas.drawPath(c.floorPath, paint)
+            paint.style = Paint.Style.FILL
         }
 
         paint.color = Color.rgb(75, 78, 88)
