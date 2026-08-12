@@ -39,7 +39,7 @@ class MenuBackgroundView @JvmOverloads constructor(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var stars: List<Star> = emptyList()
-    private val shootingStars = List(3) { ShootingStar() }
+    private val shootingStars = List(9) { ShootingStar() }
     private val rng = Random(System.nanoTime())
     private val trailColors = intArrayOf(
         Color.rgb(140, 210, 255), // pale blue
@@ -50,7 +50,7 @@ class MenuBackgroundView @JvmOverloads constructor(
 
     private var worldTime = 0f
     private var lastFrameNanos = 0L
-    private var nextSpawnIn = 1.5f
+    private var nextSpawnIn = 0.6f
 
     private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1000L
@@ -109,7 +109,7 @@ class MenuBackgroundView @JvmOverloads constructor(
         nextSpawnIn -= dt
         if (nextSpawnIn <= 0f) {
             spawnShootingStar()
-            nextSpawnIn = 3.5f + rng.nextFloat() * 4.5f
+            nextSpawnIn = 1.2f + rng.nextFloat() * 1.5f
         }
 
         for (star in shootingStars) {
@@ -157,7 +157,9 @@ class MenuBackgroundView @JvmOverloads constructor(
         val g = Color.green(star.color)
         val b = Color.blue(star.color)
 
-        val steps = 10
+        // 3x the step count at the same per-step spacing as before, so the tail is 3x as
+        // long (a proper streak) without thinning out the dot density along it.
+        val steps = 30
         val stepTime = 0.028f
         for (i in steps downTo 1) {
             val t = i * stepTime
