@@ -561,9 +561,9 @@ class GameEngine {
         canvas.clipPath(arenaClipPath)
 
         paint.style = Paint.Style.FILL
+        paint.color = Color.argb(180, 40, 255, 60)
         for (b in bloodSplatters) {
             for (i in b.blobX.indices) {
-                paint.color = Color.argb(180, 40, 255, 60)
                 canvas.drawCircle(b.x + b.blobX[i], b.y + b.blobY[i], b.blobRadius[i], paint)
             }
         }
