@@ -52,6 +52,22 @@ class Zombie(
 
     val radius = (if (isTank) 22f * 1.9f else 22f) * visualScale
 
+    // These colors/gradients depend only on radius/isTank, both fixed for the
+    // lifetime of the instance, so they're computed once here instead of being
+    // reallocated every draw() call (a zombie can be drawn 60x/sec).
+    private val bodyColor = if (isTank) Color.rgb(90, 78, 70) else Color.rgb(58, 104, 58)
+    private val bodyColorLight = if (isTank) Color.rgb(120, 104, 92) else Color.rgb(96, 156, 90)
+    private val limbColor = if (isTank) Color.rgb(78, 66, 58) else Color.rgb(58, 104, 58)
+    private val armColor = if (isTank) Color.rgb(86, 74, 64) else Color.rgb(66, 116, 66)
+    private val headLight = if (isTank) Color.rgb(150, 90, 80) else Color.rgb(120, 172, 112)
+    private val headDark = if (isTank) Color.rgb(100, 56, 50) else Color.rgb(80, 132, 78)
+    private val outline = if (isTank) Color.rgb(30, 22, 18) else Color.rgb(24, 46, 24)
+    private val headCenterY = -radius * 0.62f
+    private val headR = radius * 0.34f
+    private val torsoRect = RectF(-radius * 0.42f, -radius * 0.42f, radius * 0.42f, radius * 0.28f)
+    private val torsoGradient = LinearGradient(0f, torsoRect.top, 0f, torsoRect.bottom, bodyColorLight, bodyColor, Shader.TileMode.CLAMP)
+    private val headGradient = RadialGradient(-headR * 0.3f, headCenterY - headR * 0.3f, headR * 1.4f, headLight, headDark, Shader.TileMode.CLAMP)
+
     fun applySlow(factor: Float, durationSec: Float) {
         slowFactor = min(slowFactor, factor)
         slowTimer = max(slowTimer, durationSec)
@@ -150,13 +166,6 @@ class Zombie(
         }
 
         val swing = sin(walkPhase) * 0.6f
-        val bodyColor = if (isTank) Color.rgb(90, 78, 70) else Color.rgb(58, 104, 58)
-        val bodyColorLight = if (isTank) Color.rgb(120, 104, 92) else Color.rgb(96, 156, 90)
-        val limbColor = if (isTank) Color.rgb(78, 66, 58) else Color.rgb(58, 104, 58)
-        val armColor = if (isTank) Color.rgb(86, 74, 64) else Color.rgb(66, 116, 66)
-        val headLight = if (isTank) Color.rgb(150, 90, 80) else Color.rgb(120, 172, 112)
-        val headDark = if (isTank) Color.rgb(100, 56, 50) else Color.rgb(80, 132, 78)
-        val outline = if (isTank) Color.rgb(30, 22, 18) else Color.rgb(24, 46, 24)
         val limbWidth = radius * 0.34f
 
         // Legs.
@@ -168,8 +177,7 @@ class Zombie(
         drawLimb(canvas, paint, 0f, -radius * 0.1f, swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, armColor, outline)
 
         // Torso, shaded with a vertical gradient for a rounder look.
-        val torsoRect = RectF(-radius * 0.42f, -radius * 0.42f, radius * 0.42f, radius * 0.28f)
-        paint.shader = LinearGradient(0f, torsoRect.top, 0f, torsoRect.bottom, bodyColorLight, bodyColor, Shader.TileMode.CLAMP)
+        paint.shader = torsoGradient
         paint.style = Paint.Style.FILL
         canvas.drawRoundRect(torsoRect, radius * 0.16f, radius * 0.16f, paint)
         paint.shader = null
@@ -187,9 +195,7 @@ class Zombie(
         }
 
         // Head, radial-shaded so it reads as round rather than a flat disc.
-        val headCenterY = -radius * 0.62f
-        val headR = radius * 0.34f
-        paint.shader = RadialGradient(-headR * 0.3f, headCenterY - headR * 0.3f, headR * 1.4f, headLight, headDark, Shader.TileMode.CLAMP)
+        paint.shader = headGradient
         paint.style = Paint.Style.FILL
         canvas.drawCircle(0f, headCenterY, headR, paint)
         paint.shader = null

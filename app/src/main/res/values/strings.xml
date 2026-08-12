@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tower Defence</string>
+    <string name="stats_teaser">Best wave: %1$d  •  Best kills: %2$d</string>
 </resources>

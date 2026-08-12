@@ -24,8 +24,20 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
     var fireIntervalSec = 1f
     var range = 0f
     var splashRadius = 0f
-    /** Resolution-relative scale so the weapon reads at a consistent size across devices. */
+    /**
+     * Resolution-relative scale so the weapon reads at a consistent size across devices.
+     * Mount/barrel gradients only depend on this value, so they're cached and only rebuilt
+     * when it actually changes (e.g. on a surface resize), instead of every draw() call.
+     */
     var visualScale = 1f
+        set(value) {
+            if (field == value) return
+            field = value
+            mountGradient = RadialGradient(-3f * value, -3f * value, 16f * value, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
+            barrelGradient = LinearGradient(0f, -8f * value, 0f, 8f * value, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
+        }
+    private var mountGradient: Shader = RadialGradient(-3f, -3f, 16f, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
+    private var barrelGradient: Shader = LinearGradient(0f, -8f, 0f, 8f, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
     private val turnSpeedRadPerSec = 7f
 
     private var cooldown = 0f
@@ -84,7 +96,7 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
         canvas.rotate(Math.toDegrees(turretAngle.toDouble()).toFloat())
 
         // Base mount, radially shaded so it reads as a rounded stone/metal socket.
-        paint.shader = RadialGradient(-3f * s, -3f * s, 16f * s, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
+        paint.shader = mountGradient
         paint.style = Paint.Style.FILL
         canvas.drawCircle(0f, 0f, 14f * s, paint)
         paint.shader = null
@@ -97,7 +109,7 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
             WeaponType.CANNON -> {
                 val recoilOffset = recoil * 6f * s
                 val barrel = RectF(-6f * s - recoilOffset, -8f * s, 24f * s - recoilOffset, 8f * s)
-                paint.shader = LinearGradient(0f, barrel.top, 0f, barrel.bottom, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
+                paint.shader = barrelGradient
                 paint.style = Paint.Style.FILL
                 canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
                 paint.shader = null

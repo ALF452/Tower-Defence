@@ -15,6 +15,8 @@ class GameActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         gameView = GameView(this)
+        val highScores = HighScores(this)
+        gameView.engine.onGameOver = { waveReached, kills -> highScores.recordRun(waveReached, kills) }
         setContentView(gameView)
         hideSystemBars()
     }

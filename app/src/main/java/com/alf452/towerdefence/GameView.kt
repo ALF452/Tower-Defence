@@ -9,7 +9,7 @@ import com.alf452.towerdefence.game.GameEngine
 
 class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
 
-    private val engine = GameEngine()
+    val engine = GameEngine()
     private var gameThread: GameThread? = null
 
     init {

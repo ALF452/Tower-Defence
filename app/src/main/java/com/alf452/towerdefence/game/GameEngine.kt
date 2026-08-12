@@ -73,6 +73,16 @@ class GameEngine {
     var lastWaveGoldEarned = 0
         private set
 
+    var killCount = 0
+        private set
+
+    /**
+     * Fired exactly once, the frame the castle falls, with (waveReached, killCount) so
+     * callers (e.g. [com.alf452.towerdefence.GameActivity]) can record a high score. Not
+     * reset by [restart] so it keeps firing across multiple runs in one session.
+     */
+    var onGameOver: ((Int, Int) -> Unit)? = null
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val hud = Hud()
 
@@ -130,6 +140,7 @@ class GameEngine {
             if (z.health <= 0f && !z.rewardClaimed) {
                 goldFromKills += z.goldReward
                 z.rewardClaimed = true
+                killCount++
             }
         }
         gold += goldFromKills
@@ -147,6 +158,7 @@ class GameEngine {
 
         if (castle.isDestroyed() && state != GameState.GAME_OVER) {
             state = GameState.GAME_OVER
+            onGameOver?.invoke(waveManager.waveNumber, killCount)
         }
     }
 
@@ -241,6 +253,7 @@ class GameEngine {
         projectiles.clear()
         explosions.clear()
         gold = 0
+        killCount = 0
         cannonLevel = 1
         archerLevel = 0
         explosiveLevel = 0
