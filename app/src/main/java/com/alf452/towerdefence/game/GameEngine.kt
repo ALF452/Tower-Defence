@@ -246,8 +246,8 @@ class GameEngine {
         explosiveLevel = 0
         slowLevel = 0
         bleedLevel = 0
-        for (s in cannonSlots) s.unlocked = false
-        for (s in archerSlots) s.unlocked = false
+        // recomputeCannonStats()/recomputeArcherStats() below already derive each slot's
+        // `unlocked` from the level fields just reset above, so no separate reset is needed.
         recomputeCannonStats()
         recomputeArcherStats()
         castle.resetForNewGame()

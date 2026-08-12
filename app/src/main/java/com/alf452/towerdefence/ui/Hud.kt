@@ -111,11 +111,11 @@ class Hud {
         fillPaint.color = Color.argb(165, 8, 6, 14)
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
-        val buttonHeight = 58f * s
-        val rowGap = 12f * s
-        val headerHeight = 74f * s
-        val dividerGap = 30f * s
-        val finalGap = 20f * s
+        var buttonHeight = 58f * s
+        var rowGap = 12f * s
+        var headerHeight = 74f * s
+        var dividerGap = 30f * s
+        var finalGap = 20f * s
 
         // Base 3 rows always show; specializations add a divider label plus 2 more rows
         // (Explosive Rounds, and Slow/Bleed sharing one row) once wave 10 is cleared.
@@ -125,6 +125,20 @@ class Hud {
 
         val cardWidth = w * 0.88f
         val cardHeight = minOf(h * 0.92f, contentHeight)
+
+        // If the available height is too short to fit every row at its natural size (e.g. a
+        // resizable/split-screen window that doesn't honor the portrait lock), shrink all the
+        // internal spacing proportionally so the Start Wave button always ends up inside the
+        // card instead of being laid out past its clamped bottom edge.
+        if (contentHeight > cardHeight) {
+            val fit = cardHeight / contentHeight
+            buttonHeight *= fit
+            rowGap *= fit
+            headerHeight *= fit
+            dividerGap *= fit
+            finalGap *= fit
+        }
+
         val cardLeft = (w - cardWidth) / 2f
         val cardTop = (h - cardHeight) / 2f
         val cardRect = RectF(cardLeft, cardTop, cardLeft + cardWidth, cardTop + cardHeight)

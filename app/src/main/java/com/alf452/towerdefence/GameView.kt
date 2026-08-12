@@ -44,7 +44,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_DOWN) {
-            engine.onTouch(event.x, event.y)
+            // Touches land on the UI thread while GameThread concurrently iterates/mutates
+            // the same engine state every frame; without this lock a tap that triggers
+            // restart()/purchase*() (which clear or mutate the zombie/projectile lists) can
+            // race a live iteration on GameThread and throw ConcurrentModificationException.
+            synchronized(engine) {
+                engine.onTouch(event.x, event.y)
+            }
         }
         return true
     }
@@ -66,13 +72,17 @@ private class GameThread(
             lastTimeNanos = frameStart
             if (dt > 0.05f) dt = 0.05f // avoid huge catch-up jumps after a hitch
 
-            engine.update(dt)
+            synchronized(engine) {
+                engine.update(dt)
+            }
 
             var canvas: Canvas? = null
             try {
                 canvas = surfaceHolder.lockCanvas()
                 if (canvas != null) {
-                    engine.draw(canvas)
+                    synchronized(engine) {
+                        engine.draw(canvas)
+                    }
                 }
             } finally {
                 if (canvas != null) {
