@@ -25,7 +25,7 @@ class WaveManager {
     }
 
     /** Returns a newly spawned zombie this frame, or null if none spawned. */
-    fun update(dt: Float, arenaRadius: Float, centerX: Float, centerY: Float): Zombie? {
+    fun update(dt: Float, arenaRadius: Float, centerX: Float, centerY: Float, visualScale: Float): Zombie? {
         if (!waveInProgress || toSpawn <= 0) return null
         spawnTimer -= dt
         if (spawnTimer > 0f) return null
@@ -37,11 +37,11 @@ class WaveManager {
         val spawnY = centerY + arenaRadius * kotlin.math.sin(angle)
 
         val health = 30f + (waveNumber - 1) * 8f
-        val speed = 40f + min(waveNumber * 1.5f, 40f)
+        val speed = (40f + min(waveNumber * 1.5f, 40f)) * visualScale
         val damage = 4f + (waveNumber / 3)
         val goldReward = 5 + waveNumber
 
-        return Zombie(spawnX, spawnY, health, speed, damage, goldReward)
+        return Zombie(spawnX, spawnY, health, speed, damage, goldReward, visualScale)
     }
 
     fun allSpawned(): Boolean = toSpawn <= 0

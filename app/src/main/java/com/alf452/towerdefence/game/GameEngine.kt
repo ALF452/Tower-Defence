@@ -18,6 +18,15 @@ class GameEngine {
     var screenW = 0f
     var screenH = 0f
 
+    /**
+     * Resolution-relative UI/world scale factor (1.0 at a 1080px-wide reference
+     * screen). Everything drawn — HUD text/bars, the castle, zombies, weapons —
+     * is sized off this instead of bare pixel constants, so the game reads the
+     * same on a 720px phone as a 1440px one instead of shrinking/overlapping.
+     */
+    var scale = 1f
+        private set
+
     val castle = Castle(0f, 0f)
     val zombies = mutableListOf<Zombie>()
     val projectiles = mutableListOf<Projectile>()
@@ -68,6 +77,11 @@ class GameEngine {
         screenH = h
         castle.x = w / 2f
         castle.y = h / 2f
+        scale = GameMath.clamp(w / 1080f, 0.55f, 1.7f)
+        castle.radius = 70f * scale
+        castle.visualScale = scale
+        recomputeCannonStats()
+        recomputeArcherStats()
     }
 
     fun arenaRadius(): Float = minOf(screenW, screenH) * 0.45f
@@ -122,7 +136,7 @@ class GameEngine {
 
     /** Spawning, weapon targeting/firing and wave-clear detection only run while a wave is active. */
     private fun updateWaveLogic(dt: Float) {
-        waveManager.update(dt, arenaRadius(), castle.x, castle.y)?.let { zombies.add(it) }
+        waveManager.update(dt, arenaRadius(), castle.x, castle.y, scale)?.let { zombies.add(it) }
 
         val ring = ringRadius()
         for (slot in cannonSlots) {
@@ -145,9 +159,9 @@ class GameEngine {
 
     private fun fire(slot: WeaponSlot, target: Zombie, fromX: Float, fromY: Float) {
         val kind = if (slot.type == WeaponType.CANNON) ProjectileKind.CANNONBALL else ProjectileKind.ARROW
-        val speed = if (slot.type == WeaponType.CANNON) 340f else 620f
+        val baseSpeed = if (slot.type == WeaponType.CANNON) 340f else 620f
         projectiles.add(
-            Projectile(fromX, fromY, target.x, target.y, kind, slot.damage, slot.splashRadius, speed)
+            Projectile(fromX, fromY, target.x, target.y, kind, slot.damage, slot.splashRadius, baseSpeed * scale, scale)
         )
     }
 
@@ -160,7 +174,7 @@ class GameEngine {
             }
         } else {
             var closest: Zombie? = null
-            var bestDist = 26f
+            var bestDist = 26f * scale
             for (z in zombies) {
                 if (!z.isAlive()) continue
                 val d = GameMath.distance(z.x, z.y, p.impactX, p.impactY)
@@ -236,8 +250,9 @@ class GameEngine {
             slot.unlocked = cannonLevel >= thresholds[i]
             slot.damage = 18f + cannonLevel * 6f
             slot.fireIntervalSec = maxOf(0.35f, 1.4f - cannonLevel * 0.12f)
-            slot.range = 260f + cannonLevel * 18f
-            slot.splashRadius = 40f + cannonLevel * 4f
+            slot.range = (260f + cannonLevel * 18f) * scale
+            slot.splashRadius = (40f + cannonLevel * 4f) * scale
+            slot.visualScale = scale
         }
     }
 
@@ -247,7 +262,8 @@ class GameEngine {
             slot.unlocked = archerLevel >= thresholds[i]
             slot.damage = 8f + archerLevel * 4f
             slot.fireIntervalSec = maxOf(0.18f, 0.9f - archerLevel * 0.1f)
-            slot.range = 300f + archerLevel * 20f
+            slot.range = (300f + archerLevel * 20f) * scale
+            slot.visualScale = scale
         }
     }
 
@@ -271,7 +287,7 @@ class GameEngine {
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
         paint.color = Color.rgb(45, 36, 60)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 4f
+        paint.strokeWidth = 4f * scale
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
     }
 

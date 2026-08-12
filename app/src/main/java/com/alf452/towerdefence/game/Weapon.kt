@@ -2,7 +2,12 @@ package com.alf452.towerdefence.game
 
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.RectF
+import android.graphics.Shader
 import kotlin.math.max
 
 enum class WeaponType { CANNON, ARCHER }
@@ -19,6 +24,8 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
     var fireIntervalSec = 1f
     var range = 0f
     var splashRadius = 0f
+    /** Resolution-relative scale so the weapon reads at a consistent size across devices. */
+    var visualScale = 1f
     private val turnSpeedRadPerSec = 7f
 
     private var cooldown = 0f
@@ -70,42 +77,85 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
         val pos = ringPosition(castle, ringRadius)
         val px = pos[0]
         val py = pos[1]
+        val s = visualScale
 
         canvas.save()
         canvas.translate(px, py)
         canvas.rotate(Math.toDegrees(turretAngle.toDouble()).toFloat())
 
-        // Base mount.
+        // Base mount, radially shaded so it reads as a rounded stone/metal socket.
+        paint.shader = RadialGradient(-3f * s, -3f * s, 16f * s, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(90, 84, 74)
-        canvas.drawCircle(0f, 0f, 14f, paint)
+        canvas.drawCircle(0f, 0f, 14f * s, paint)
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f * s
+        paint.color = Color.rgb(50, 45, 38)
+        canvas.drawCircle(0f, 0f, 14f * s, paint)
 
         when (type) {
             WeaponType.CANNON -> {
-                paint.color = Color.rgb(48, 48, 52)
-                val recoilOffset = recoil * 6f
-                canvas.drawRoundRect(-6f - recoilOffset, -8f, 22f - recoilOffset, 8f, 4f, 4f, paint)
+                val recoilOffset = recoil * 6f * s
+                val barrel = RectF(-6f * s - recoilOffset, -8f * s, 24f * s - recoilOffset, 8f * s)
+                paint.shader = LinearGradient(0f, barrel.top, 0f, barrel.bottom, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
+                paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
+                paint.shader = null
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 1.2f * s
+                paint.color = Color.rgb(15, 15, 18)
+                canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
+
+                // Muzzle rim.
+                paint.style = Paint.Style.FILL
+                paint.color = Color.rgb(18, 18, 20)
+                canvas.drawCircle(barrel.right, 0f, 5f * s, paint)
+
                 if (muzzleFlash > 0f) {
                     paint.color = Color.argb((muzzleFlash * 220).toInt(), 255, 200, 90)
-                    canvas.drawCircle(24f - recoilOffset, 0f, 10f * muzzleFlash, paint)
+                    canvas.drawCircle(barrel.right + 6f * s, 0f, 10f * s * muzzleFlash, paint)
                 }
             }
             WeaponType.ARCHER -> {
+                paint.shader = null
+                paint.style = Paint.Style.FILL
                 paint.color = Color.rgb(120, 90, 60)
-                canvas.drawRect(-3f, -14f, 3f, 14f, paint)
+                canvas.drawRoundRect(-3f * s, -16f * s, 3f * s, 16f * s, 2f * s, 2f * s, paint)
+
+                val pull = 8f * s * drawBack
+                val tipTopX = -2f * s
+                val tipTopY = -16f * s
+                val tipBottomX = -2f * s
+                val tipBottomY = 16f * s
+                val bowBulgeX = -16f * s
+
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2f
-                paint.color = Color.rgb(210, 200, 180)
-                val pull = 8f * drawBack
-                canvas.drawLine(0f, -14f, -pull, 0f, paint)
-                canvas.drawLine(0f, 14f, -pull, 0f, paint)
+                paint.strokeWidth = 2f * s
+                paint.color = Color.rgb(214, 200, 176)
+                val bowPath = Path().apply {
+                    moveTo(tipTopX, tipTopY)
+                    quadTo(bowBulgeX, 0f, tipBottomX, tipBottomY)
+                }
+                canvas.drawPath(bowPath, paint)
+
+                // Bowstring, pulled back toward the archer while winding up to fire.
+                paint.strokeWidth = 1.6f * s
+                paint.color = Color.rgb(230, 225, 210)
+                canvas.drawLine(tipTopX, tipTopY, -pull, 0f, paint)
+                canvas.drawLine(tipBottomX, tipBottomY, -pull, 0f, paint)
+
                 if (drawBack > 0.05f) {
-                    canvas.drawLine(-pull, 0f, 18f, 0f, paint)
+                    paint.strokeWidth = 1.5f * s
+                    canvas.drawLine(-pull, 0f, 18f * s, 0f, paint)
+                    paint.style = Paint.Style.FILL
+                    paint.color = Color.rgb(90, 70, 50)
+                    canvas.drawCircle(18f * s, 0f, 2.2f * s, paint)
                 }
             }
         }
 
         canvas.restore()
+        paint.shader = null
     }
 
     fun rangePreviewRadius(): Float = range

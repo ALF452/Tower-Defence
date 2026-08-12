@@ -19,14 +19,21 @@ rendering (no game engine, no external art assets — everything is drawn and an
 - Zombies have a procedural walk cycle (swinging limbs) and a collapse-and-fade death animation.
   Cannons recoil and flash when they fire; archers visibly draw their bow before loosing an arrow.
 
+- The app opens on a separate title screen; tapping Play launches the game itself, so the menu
+  and the gameplay view are two distinct Activities rather than the game just starting in place.
+
 ## Project layout
 
-- `app/src/main/java/com/alf452/towerdefence/` — `MainActivity`, `GameView` (SurfaceView + game
-  loop thread).
+- `app/src/main/java/com/alf452/towerdefence/` — `MainMenuActivity` (launcher, title screen),
+  `GameActivity` (hosts the game, immersive fullscreen), `GameView` (SurfaceView + game loop
+  thread).
 - `.../game/` — simulation: `GameEngine`, `Castle`, `Zombie`, `Weapon` (cannon/archer slots),
-  `Projectile`, `WaveManager`, `GameMath`.
-- `.../ui/Hud.kt` — health/shield bars, gold/wave readout, upgrade panel, game-over panel, and
-  touch hit-testing for all of the above.
+  `Projectile`, `WaveManager`, `GameMath`. All visual sizing is resolution-relative
+  (`GameEngine.scale`, derived from screen width) rather than fixed pixel constants, so the game
+  reads the same across devices instead of shrinking or overlapping.
+- `.../ui/Hud.kt` — health/shield bars, gold/wave readout (as independently-sized pill chips so
+  digit growth can't make them collide), the upgrade popup and game-over popup (both dim the
+  battlefield and show a centered card), and touch hit-testing for all of the above.
 
 ## Building
 

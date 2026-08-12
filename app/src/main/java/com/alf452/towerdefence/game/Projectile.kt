@@ -3,6 +3,9 @@ package com.alf452.towerdefence.game
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -20,7 +23,8 @@ class Projectile(
     val kind: ProjectileKind,
     val damage: Float,
     val splashRadius: Float,
-    private val speed: Float
+    private val speed: Float,
+    private val visualScale: Float = 1f
 ) {
     var alive = true
         private set
@@ -58,19 +62,42 @@ class Projectile(
 
     fun draw(canvas: Canvas, paint: Paint) {
         if (!alive) return
-        paint.style = Paint.Style.FILL
+        val s = visualScale
         when (kind) {
             ProjectileKind.CANNONBALL -> {
-                paint.color = Color.rgb(40, 40, 40)
-                canvas.drawCircle(x, y, 9f, paint)
+                paint.shader = RadialGradient(
+                    x - 3f * s, y - 3f * s, 10f * s,
+                    Color.rgb(80, 80, 84), Color.rgb(20, 20, 22), Shader.TileMode.CLAMP
+                )
+                paint.style = Paint.Style.FILL
+                canvas.drawCircle(x, y, 8f * s, paint)
+                paint.shader = null
             }
             ProjectileKind.ARROW -> {
+                paint.style = Paint.Style.STROKE
                 paint.color = Color.rgb(210, 190, 150)
-                paint.strokeWidth = 4f
+                paint.strokeWidth = 3.5f * s
                 paint.strokeCap = Paint.Cap.ROUND
-                val backX = x - cos(angle) * 16f
-                val backY = y - sin(angle) * 16f
+                val backX = x - cos(angle) * 18f * s
+                val backY = y - sin(angle) * 18f * s
                 canvas.drawLine(backX, backY, x, y, paint)
+
+                // Arrowhead.
+                paint.style = Paint.Style.FILL
+                paint.color = Color.rgb(150, 150, 156)
+                val headLen = 6f * s
+                val headWidth = 3.5f * s
+                val leftX = x - cos(angle) * headLen - sin(angle) * headWidth
+                val leftY = y - sin(angle) * headLen + cos(angle) * headWidth
+                val rightX = x - cos(angle) * headLen + sin(angle) * headWidth
+                val rightY = y - sin(angle) * headLen - cos(angle) * headWidth
+                val headPath = Path().apply {
+                    moveTo(x, y)
+                    lineTo(leftX, leftY)
+                    lineTo(rightX, rightY)
+                    close()
+                }
+                canvas.drawPath(headPath, paint)
             }
         }
     }

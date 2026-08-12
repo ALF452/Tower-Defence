@@ -10,7 +10,7 @@ import com.alf452.towerdefence.game.GameState
 
 /**
  * Draws the health/shield bars, gold/wave readout, the between-wave upgrade
- * panel and the game-over panel, and hit-tests taps against whichever panel
+ * popup and the game-over popup, and hit-tests taps against whichever popup
  * is currently showing.
  */
 class Hud {
@@ -30,105 +30,156 @@ class Hud {
     fun draw(canvas: Canvas, engine: GameEngine) {
         drawTopBars(canvas, engine)
         when (engine.state) {
-            GameState.INTERMISSION -> drawUpgradePanel(canvas, engine)
-            GameState.GAME_OVER -> drawGameOverPanel(canvas, engine)
+            GameState.INTERMISSION -> drawUpgradePopup(canvas, engine)
+            GameState.GAME_OVER -> drawGameOverPopup(canvas, engine)
             GameState.PLAYING -> {}
         }
     }
 
     private fun drawTopBars(canvas: Canvas, engine: GameEngine) {
+        val s = engine.scale
         val w = engine.screenW
-        val margin = 24f
+        val margin = 20f * s
         val barWidth = w - margin * 2f
-        val barHeight = 22f
-        var top = 40f
+        val barHeight = 24f * s
+        var top = 28f * s
 
         // Health bar.
         fillPaint.style = Paint.Style.FILL
-        fillPaint.color = Color.argb(180, 0, 0, 0)
-        canvas.drawRect(margin, top, margin + barWidth, top + barHeight, fillPaint)
+        fillPaint.color = Color.argb(190, 0, 0, 0)
+        canvas.drawRoundRect(margin, top, margin + barWidth, top + barHeight, barHeight / 2f, barHeight / 2f, fillPaint)
         val healthRatio = GameMath.clamp(engine.castle.health / engine.castle.maxHealth, 0f, 1f)
         fillPaint.color = Color.rgb(210, 50, 50)
-        canvas.drawRect(margin, top, margin + barWidth * healthRatio, top + barHeight, fillPaint)
-        textPaint.textSize = 16f
+        if (healthRatio > 0f) {
+            canvas.drawRoundRect(margin, top, margin + barWidth * healthRatio, top + barHeight, barHeight / 2f, barHeight / 2f, fillPaint)
+        }
+        textPaint.textSize = 16f * s
         canvas.drawText(
             "Castle HP ${engine.castle.health.toInt()}/${engine.castle.maxHealth.toInt()}",
-            margin + barWidth / 2f, top + barHeight - 5f, textPaint
+            margin + barWidth / 2f, top + barHeight * 0.7f, textPaint
         )
-        top += barHeight + 8f
+        top += barHeight + 8f * s
 
         // Shield bar.
-        fillPaint.color = Color.argb(180, 0, 0, 0)
-        canvas.drawRect(margin, top, margin + barWidth, top + barHeight, fillPaint)
+        fillPaint.color = Color.argb(190, 0, 0, 0)
+        canvas.drawRoundRect(margin, top, margin + barWidth, top + barHeight, barHeight / 2f, barHeight / 2f, fillPaint)
         val shieldRatio = GameMath.clamp(engine.castle.shield / engine.castle.maxShield, 0f, 1f)
         fillPaint.color = Color.rgb(70, 140, 230)
-        canvas.drawRect(margin, top, margin + barWidth * shieldRatio, top + barHeight, fillPaint)
+        if (shieldRatio > 0f) {
+            canvas.drawRoundRect(margin, top, margin + barWidth * shieldRatio, top + barHeight, barHeight / 2f, barHeight / 2f, fillPaint)
+        }
         canvas.drawText(
             "Shield ${engine.castle.shield.toInt()}/${engine.castle.maxShield.toInt()}",
-            margin + barWidth / 2f, top + barHeight - 5f, textPaint
+            margin + barWidth / 2f, top + barHeight * 0.7f, textPaint
         )
-        top += barHeight + 14f
+        top += barHeight + 16f * s
 
-        // Wave + gold readout.
-        textPaint.textSize = 26f
-        textPaint.textAlign = Paint.Align.LEFT
-        canvas.drawText("Wave ${engine.waveManager.waveNumber}", margin, top + 20f, textPaint)
-        textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("Gold: ${engine.gold}", margin + barWidth, top + 20f, textPaint)
-        textPaint.textAlign = Paint.Align.CENTER
+        // Wave/gold readout as two independently-sized pill chips, each anchored to
+        // its own screen edge and sized to its own text — they can never collide
+        // with each other no matter how many digits either number grows to.
+        textPaint.textSize = 20f * s
+        val chipHeight = 34f * s
+        val waveText = "Wave ${engine.waveManager.waveNumber}"
+        val waveChipWidth = textPaint.measureText(waveText) + 28f * s
+        drawChip(canvas, margin, top, waveChipWidth, chipHeight, waveText)
+
+        val goldText = "Gold: ${engine.gold}"
+        val goldChipWidth = textPaint.measureText(goldText) + 28f * s
+        drawChip(canvas, w - margin - goldChipWidth, top, goldChipWidth, chipHeight, goldText)
     }
 
-    private fun drawUpgradePanel(canvas: Canvas, engine: GameEngine) {
+    private fun drawChip(canvas: Canvas, left: Float, top: Float, width: Float, height: Float, text: String) {
+        val rect = RectF(left, top, left + width, top + height)
+        fillPaint.style = Paint.Style.FILL
+        fillPaint.color = Color.argb(200, 22, 18, 34)
+        canvas.drawRoundRect(rect, height / 2f, height / 2f, fillPaint)
+        textPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText(text, rect.centerX(), rect.centerY() + textPaint.textSize * 0.35f, textPaint)
+    }
+
+    private fun drawUpgradePopup(canvas: Canvas, engine: GameEngine) {
+        val s = engine.scale
         val w = engine.screenW
         val h = engine.screenH
-        val panelTop = h * 0.58f
-        val panelHeight = h - panelTop - 24f
-        val panelRect = RectF(20f, panelTop, w - 20f, panelTop + panelHeight)
 
+        // Dim the paused battlefield behind the popup so it reads as a modal.
         fillPaint.style = Paint.Style.FILL
-        fillPaint.color = Color.argb(225, 20, 16, 32)
-        canvas.drawRoundRect(panelRect, 20f, 20f, fillPaint)
+        fillPaint.color = Color.argb(165, 8, 6, 14)
+        canvas.drawRect(0f, 0f, w, h, fillPaint)
 
-        textPaint.textSize = 26f
-        val title = if (engine.waveManager.waveNumber == 1) "Prepare your defenses" else "Wave ${engine.waveManager.waveNumber - 1} cleared! +${engine.lastWaveGoldEarned}g"
-        canvas.drawText(title, w / 2f, panelRect.top + 34f, textPaint)
+        val cardWidth = w * 0.88f
+        val cardHeight = minOf(h * 0.74f, 620f * s)
+        val cardLeft = (w - cardWidth) / 2f
+        val cardTop = (h - cardHeight) / 2f
+        val cardRect = RectF(cardLeft, cardTop, cardLeft + cardWidth, cardTop + cardHeight)
 
-        val buttonHeight = 64f
-        val buttonMargin = 16f
-        var buttonTop = panelRect.top + 54f
-        val buttonWidth = panelRect.width() - buttonMargin * 2f
+        drawCard(canvas, cardRect, s, Color.rgb(90, 78, 120))
+
+        textPaint.textSize = 23f * s
+        val title = if (engine.waveManager.waveNumber == 1) {
+            "Prepare your defenses"
+        } else {
+            "Wave ${engine.waveManager.waveNumber - 1} cleared! +${engine.lastWaveGoldEarned}g"
+        }
+        canvas.drawText(title, cardRect.centerX(), cardRect.top + 42f * s, textPaint)
+
+        fillPaint.color = Color.argb(90, 255, 255, 255)
+        canvas.drawRect(cardRect.left + 24f * s, cardRect.top + 56f * s, cardRect.right - 24f * s, cardRect.top + 57f * s, fillPaint)
+
+        val buttonHeight = 60f * s
+        val buttonMargin = 20f * s
+        var buttonTop = cardRect.top + 74f * s
+        val buttonWidth = cardRect.width() - buttonMargin * 2f
 
         wallButtonRect = drawUpgradeButton(
-            canvas, panelRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
+            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
             "Castle Walls (Lv ${engine.castle.wallLevel})", "Shield/HP up",
-            engine.wallUpgradeCost(), engine.gold
+            engine.wallUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 12f
+        buttonTop += buttonHeight + 12f * s
 
         cannonButtonRect = drawUpgradeButton(
-            canvas, panelRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
+            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
             "Castle Cannons (Lv ${engine.cannonLevel})", "Damage/rate/range up",
-            engine.cannonUpgradeCost(), engine.gold
+            engine.cannonUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 12f
+        buttonTop += buttonHeight + 12f * s
 
         archerButtonRect = drawUpgradeButton(
-            canvas, panelRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
+            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
             "Archer Towers (Lv ${engine.archerLevel})", "Unlock/upgrade archers",
-            engine.archerUpgradeCost(), engine.gold
+            engine.archerUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 20f
+        buttonTop += buttonHeight + 20f * s
 
-        startWaveButtonRect = RectF(panelRect.left + buttonMargin, buttonTop, panelRect.right - buttonMargin, buttonTop + buttonHeight)
+        startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + buttonHeight)
+        fillPaint.style = Paint.Style.FILL
         fillPaint.color = Color.rgb(60, 140, 70)
-        canvas.drawRoundRect(startWaveButtonRect, 12f, 12f, fillPaint)
-        textPaint.textSize = 24f
-        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 8f, textPaint)
+        canvas.drawRoundRect(startWaveButtonRect, 14f * s, 14f * s, fillPaint)
+        textPaint.textSize = 21f * s
+        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
+    }
+
+    /** Draws a rounded card with a drop shadow and border — the shared "popup" look. */
+    private fun drawCard(canvas: Canvas, rect: RectF, scale: Float, borderColor: Int) {
+        val radius = 24f * scale
+        fillPaint.style = Paint.Style.FILL
+        fillPaint.color = Color.argb(120, 0, 0, 0)
+        val shadowRect = RectF(rect.left + 4f * scale, rect.top + 8f * scale, rect.right + 4f * scale, rect.bottom + 8f * scale)
+        canvas.drawRoundRect(shadowRect, radius, radius, fillPaint)
+
+        fillPaint.color = Color.rgb(30, 24, 46)
+        canvas.drawRoundRect(rect, radius, radius, fillPaint)
+        fillPaint.style = Paint.Style.STROKE
+        fillPaint.strokeWidth = 2f * scale
+        fillPaint.color = borderColor
+        canvas.drawRoundRect(rect, radius, radius, fillPaint)
+        fillPaint.style = Paint.Style.FILL
     }
 
     private fun drawUpgradeButton(
         canvas: Canvas, left: Float, top: Float, width: Float, height: Float,
-        title: String, subtitle: String, cost: Int?, gold: Int
+        title: String, subtitle: String, cost: Int?, gold: Int, scale: Float
     ): RectF {
         val rect = RectF(left, top, left + width, top + height)
         val affordable = cost != null && gold >= cost
@@ -138,42 +189,50 @@ class Hud {
             affordable -> Color.rgb(58, 92, 140)
             else -> Color.rgb(50, 45, 60)
         }
-        canvas.drawRoundRect(rect, 12f, 12f, fillPaint)
+        canvas.drawRoundRect(rect, 12f * scale, 12f * scale, fillPaint)
 
         textPaint.textAlign = Paint.Align.LEFT
-        textPaint.textSize = 20f
-        canvas.drawText(title, rect.left + 16f, rect.top + 26f, textPaint)
-        textPaint.textSize = 15f
+        textPaint.textSize = 18f * scale
+        canvas.drawText(title, rect.left + 16f * scale, rect.top + 24f * scale, textPaint)
+        textPaint.textSize = 13f * scale
         textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(subtitle, rect.left + 16f, rect.top + 48f, textPaint)
+        canvas.drawText(subtitle, rect.left + 16f * scale, rect.top + 44f * scale, textPaint)
         textPaint.color = Color.WHITE
 
         textPaint.textAlign = Paint.Align.RIGHT
-        textPaint.textSize = 20f
+        textPaint.textSize = 18f * scale
         val costLabel = cost?.let { "${it}g" } ?: "MAX"
-        canvas.drawText(costLabel, rect.right - 16f, rect.top + 38f, textPaint)
+        canvas.drawText(costLabel, rect.right - 16f * scale, rect.top + 34f * scale, textPaint)
         textPaint.textAlign = Paint.Align.CENTER
 
         return rect
     }
 
-    private fun drawGameOverPanel(canvas: Canvas, engine: GameEngine) {
+    private fun drawGameOverPopup(canvas: Canvas, engine: GameEngine) {
+        val s = engine.scale
         val w = engine.screenW
         val h = engine.screenH
+
         fillPaint.style = Paint.Style.FILL
-        fillPaint.color = Color.argb(200, 10, 8, 16)
+        fillPaint.color = Color.argb(190, 8, 6, 14)
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
-        textPaint.textSize = 40f
-        canvas.drawText("The Castle Has Fallen", w / 2f, h * 0.42f, textPaint)
-        textPaint.textSize = 24f
-        canvas.drawText("You survived to wave ${engine.waveManager.waveNumber}", w / 2f, h * 0.42f + 44f, textPaint)
+        val cardWidth = w * 0.82f
+        val cardHeight = 260f * s
+        val cardRect = RectF((w - cardWidth) / 2f, h * 0.5f - cardHeight / 2f, (w + cardWidth) / 2f, h * 0.5f + cardHeight / 2f)
+        drawCard(canvas, cardRect, s, Color.rgb(130, 60, 60))
 
-        restartButtonRect = RectF(w / 2f - 110f, h * 0.55f, w / 2f + 110f, h * 0.55f + 64f)
+        textPaint.textSize = 30f * s
+        canvas.drawText("The Castle Has Fallen", cardRect.centerX(), cardRect.top + 56f * s, textPaint)
+        textPaint.textSize = 19f * s
+        canvas.drawText("You survived to wave ${engine.waveManager.waveNumber}", cardRect.centerX(), cardRect.top + 92f * s, textPaint)
+
+        restartButtonRect = RectF(cardRect.centerX() - 100f * s, cardRect.bottom - 90f * s, cardRect.centerX() + 100f * s, cardRect.bottom - 26f * s)
+        fillPaint.style = Paint.Style.FILL
         fillPaint.color = Color.rgb(60, 140, 70)
-        canvas.drawRoundRect(restartButtonRect, 12f, 12f, fillPaint)
-        textPaint.textSize = 24f
-        canvas.drawText("Rebuild", restartButtonRect.centerX(), restartButtonRect.centerY() + 8f, textPaint)
+        canvas.drawRoundRect(restartButtonRect, 14f * s, 14f * s, fillPaint)
+        textPaint.textSize = 21f * s
+        canvas.drawText("Rebuild", restartButtonRect.centerX(), restartButtonRect.centerY() + 7f * s, textPaint)
     }
 
     fun handleTouch(x: Float, y: Float, engine: GameEngine) {

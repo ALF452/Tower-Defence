@@ -2,16 +2,21 @@ package com.alf452.towerdefence.game
 
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.RectF
+import android.graphics.Shader
 import kotlin.math.cos
 import kotlin.math.sin
 
 enum class ZombieState { WALKING, ATTACKING, DYING, DEAD }
 
 /**
- * A little zombie shambling in from the wave edge toward the castle.
- * Limbs are drawn as rotated line segments driven by a walk-cycle phase,
- * so no sprite sheet is needed for the animation.
+ * A little zombie shambling in from the wave edge toward the castle. Limbs are
+ * filled, rotated rounded-rect "capsules" (not stroked lines) driven by a
+ * walk-cycle phase, so it reads as a solid little creature instead of a stick
+ * figure, with no sprite sheet needed for the animation.
  */
 class Zombie(
     var x: Float,
@@ -19,7 +24,8 @@ class Zombie(
     val maxHealth: Float,
     val speed: Float,
     val contactDamage: Float,
-    val goldReward: Int
+    val goldReward: Int,
+    private val visualScale: Float = 1f
 ) {
     var health = maxHealth
     var rewardClaimed = false
@@ -34,7 +40,7 @@ class Zombie(
         private set
     private val deathDurationSec = 0.55f
 
-    val radius = 22f
+    val radius = 22f * visualScale
 
     fun update(dt: Float, castle: Castle, onDamageCastle: (Float) -> Unit) {
         when (state) {
@@ -48,7 +54,7 @@ class Zombie(
                     facingAngle = GameMath.angleTo(x, y, castle.x, castle.y)
                     x += cos(facingAngle) * speed * dt
                     y += sin(facingAngle) * speed * dt
-                    walkPhase += dt * (speed / 18f)
+                    walkPhase += dt * (speed / (18f * visualScale))
                 }
             }
             ZombieState.ATTACKING -> {
@@ -84,6 +90,14 @@ class Zombie(
     fun isRemovable(): Boolean = state == ZombieState.DEAD
 
     fun draw(canvas: Canvas, paint: Paint) {
+        paint.shader = null
+
+        if (state != ZombieState.DYING) {
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(70, 0, 0, 0)
+            canvas.drawOval(x - radius * 0.55f, y + radius * 0.55f, x + radius * 0.55f, y + radius * 0.95f, paint)
+        }
+
         canvas.save()
         canvas.translate(x, y)
 
@@ -96,60 +110,89 @@ class Zombie(
             paint.alpha = 255
         }
 
-        val swing = sin(walkPhase) * 0.55f
+        val swing = sin(walkPhase) * 0.6f
+        val outline = Color.rgb(24, 46, 24)
+        val limbWidth = radius * 0.34f
 
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 5f
-        paint.strokeCap = Paint.Cap.ROUND
-        paint.color = Color.rgb(60, 110, 60)
+        // Legs.
+        drawLimb(canvas, paint, 0f, radius * 0.15f, swing, radius * 0.75f, limbWidth, Color.rgb(58, 104, 58), outline)
+        drawLimb(canvas, paint, 0f, radius * 0.15f, -swing, radius * 0.75f, limbWidth, Color.rgb(58, 104, 58), outline)
 
-        // Legs (swing opposite phase).
-        drawLimb(canvas, paint, 0f, radius * 0.2f, swing, radius * 0.7f)
-        drawLimb(canvas, paint, 0f, radius * 0.2f, -swing, radius * 0.7f)
+        // Arms, reaching forward, roughly opposite phase from the legs.
+        drawLimb(canvas, paint, 0f, -radius * 0.1f, -swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, Color.rgb(66, 116, 66), outline)
+        drawLimb(canvas, paint, 0f, -radius * 0.1f, swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, Color.rgb(66, 116, 66), outline)
 
-        // Torso.
+        // Torso, shaded with a vertical gradient for a rounder look.
+        val torsoRect = RectF(-radius * 0.42f, -radius * 0.42f, radius * 0.42f, radius * 0.28f)
+        paint.shader = LinearGradient(
+            0f, torsoRect.top, 0f, torsoRect.bottom,
+            Color.rgb(96, 156, 90), Color.rgb(58, 104, 58), Shader.TileMode.CLAMP
+        )
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(74, 133, 74)
-        canvas.drawRoundRect(-radius * 0.4f, -radius * 0.35f, radius * 0.4f, radius * 0.25f, 8f, 8f, paint)
-
-        // Arms (reaching forward, swing opposite the legs for a shamble).
+        canvas.drawRoundRect(torsoRect, radius * 0.16f, radius * 0.16f, paint)
+        paint.shader = null
         paint.style = Paint.Style.STROKE
-        paint.color = Color.rgb(64, 116, 64)
-        drawLimb(canvas, paint, 0f, -radius * 0.15f, -swing * 0.8f - 0.3f, radius * 0.65f)
-        drawLimb(canvas, paint, 0f, -radius * 0.15f, swing * 0.8f - 0.3f, radius * 0.65f)
+        paint.strokeWidth = 2f * visualScale
+        paint.color = outline
+        canvas.drawRoundRect(torsoRect, radius * 0.16f, radius * 0.16f, paint)
 
-        // Head.
+        // Head, radial-shaded so it reads as round rather than a flat disc.
+        val headCenterY = -radius * 0.62f
+        val headR = radius * 0.34f
+        paint.shader = RadialGradient(
+            -headR * 0.3f, headCenterY - headR * 0.3f, headR * 1.4f,
+            Color.rgb(120, 172, 112), Color.rgb(80, 132, 78), Shader.TileMode.CLAMP
+        )
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(96, 150, 96)
-        canvas.drawCircle(0f, -radius * 0.55f, radius * 0.32f, paint)
+        canvas.drawCircle(0f, headCenterY, headR, paint)
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f * visualScale
+        paint.color = outline
+        canvas.drawCircle(0f, headCenterY, headR, paint)
 
-        // Eyes (angry little zombie).
-        paint.color = Color.RED
-        canvas.drawCircle(-radius * 0.1f, -radius * 0.58f, 2.5f, paint)
-        canvas.drawCircle(radius * 0.1f, -radius * 0.58f, 2.5f, paint)
+        // Glowing eyes.
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(220, 30, 20)
+        canvas.drawCircle(-headR * 0.4f, headCenterY - headR * 0.05f, headR * 0.16f, paint)
+        canvas.drawCircle(headR * 0.4f, headCenterY - headR * 0.05f, headR * 0.16f, paint)
 
         canvas.restore()
         paint.alpha = 255
+        paint.shader = null
 
         if (state != ZombieState.DYING) {
             drawHealthBar(canvas, paint)
         }
     }
 
-    private fun drawLimb(canvas: Canvas, paint: Paint, originX: Float, originY: Float, angleOffset: Float, length: Float) {
-        val angle = Math.PI.toFloat() / 2f + angleOffset
-        val endX = originX + cos(angle) * length
-        val endY = originY + sin(angle) * length
-        canvas.drawLine(originX, originY, endX, endY, paint)
+    /** Draws a filled, outlined rounded-rect "capsule" limb rotated about (originX, originY). */
+    private fun drawLimb(
+        canvas: Canvas, paint: Paint, originX: Float, originY: Float,
+        angleOffsetFromDown: Float, length: Float, width: Float, color: Int, outlineColor: Int
+    ) {
+        canvas.save()
+        canvas.translate(originX, originY)
+        canvas.rotate(Math.toDegrees(angleOffsetFromDown.toDouble()).toFloat())
+        val rect = RectF(-width / 2f, 0f, width / 2f, length)
+        paint.style = Paint.Style.FILL
+        paint.color = color
+        canvas.drawRoundRect(rect, width / 2f, width / 2f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f * visualScale
+        paint.color = outlineColor
+        canvas.drawRoundRect(rect, width / 2f, width / 2f, paint)
+        canvas.restore()
     }
 
     private fun drawHealthBar(canvas: Canvas, paint: Paint) {
         val barWidth = radius * 1.6f
+        val barHeight = 5f * visualScale
         val ratio = GameMath.clamp(health / maxHealth, 0f, 1f)
         paint.style = Paint.Style.FILL
         paint.color = Color.argb(160, 0, 0, 0)
-        canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x + barWidth / 2f, y - radius * 1.3f + 5f, paint)
+        canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x + barWidth / 2f, y - radius * 1.3f + barHeight, paint)
         paint.color = Color.rgb(200, 40, 40)
-        canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x - barWidth / 2f + barWidth * ratio, y - radius * 1.3f + 5f, paint)
+        canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x - barWidth / 2f + barWidth * ratio, y - radius * 1.3f + barHeight, paint)
     }
 }
