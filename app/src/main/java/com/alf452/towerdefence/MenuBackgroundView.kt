@@ -157,10 +157,11 @@ class MenuBackgroundView @JvmOverloads constructor(
         val g = Color.green(star.color)
         val b = Color.blue(star.color)
 
-        // 3x the step count at the same per-step spacing as before, so the tail is 3x as
-        // long (a proper streak) without thinning out the dot density along it.
-        val steps = 30
-        val stepTime = 0.028f
+        // 3x the total tail length via wider spacing between points rather than 3x the point
+        // count, since the pool size just tripled too (3 -> 9) — stacking both multipliers on
+        // draw-call count would mean up to ~279 drawCircle calls/frame for tails alone.
+        val steps = 18
+        val stepTime = 0.0467f
         for (i in steps downTo 1) {
             val t = i * stepTime
             val px = star.x - star.vx * t
