@@ -156,7 +156,9 @@ class Hud {
         fillPaint.color = Color.argb(90, 255, 255, 255)
         canvas.drawRect(cardRect.left + 24f * s, cardRect.top + 56f * s, cardRect.right - 24f * s, cardRect.top + 57f * s, fillPaint)
 
-        val buttonMargin = 20f * s
+        // Extra horizontal inset (beyond the card's own margin) so each row reads as a
+        // narrower, floating bubble instead of a bar stretched edge-to-edge across the card.
+        val buttonMargin = 20f * s + cardRect.width() * 0.05f
         var buttonTop = cardRect.top + headerHeight
         val buttonWidth = cardRect.width() - buttonMargin * 2f
 
@@ -223,11 +225,30 @@ class Hud {
 
         buttonTop += finalGap - rowGap
         startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + buttonHeight)
-        fillPaint.style = Paint.Style.FILL
-        fillPaint.color = Color.rgb(60, 140, 70)
-        canvas.drawRoundRect(startWaveButtonRect, 14f * s, 14f * s, fillPaint)
+        drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
         textPaint.textSize = 21f * s
         canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
+    }
+
+    /**
+     * Fills [rect] with [color] as a rounded "bubble" (corner radius scaled to the rect's own
+     * height) plus a translucent glossy highlight band near the top, matching the main menu's
+     * button look. Shared by the upgrade rows, Start Wave, and Rebuild buttons.
+     */
+    private fun drawBubbleBackground(canvas: Canvas, rect: RectF, color: Int) {
+        val radius = rect.height() * 0.42f
+        fillPaint.style = Paint.Style.FILL
+        fillPaint.color = color
+        canvas.drawRoundRect(rect, radius, radius, fillPaint)
+
+        fillPaint.color = Color.argb(30, 255, 255, 255)
+        canvas.drawRoundRect(
+            RectF(
+                rect.left + rect.width() * 0.06f, rect.top + rect.height() * 0.08f,
+                rect.right - rect.width() * 0.06f, rect.top + rect.height() * 0.42f
+            ),
+            radius * 0.7f, radius * 0.7f, fillPaint
+        )
     }
 
     /** Draws a rounded card with a drop shadow and border — the shared "popup" look. */
@@ -254,26 +275,25 @@ class Hud {
     ): RectF {
         val rect = RectF(left, top, left + width, top + height)
         val affordable = cost != null && gold >= cost
-        fillPaint.style = Paint.Style.FILL
-        fillPaint.color = when {
+        val color = when {
             cost == null -> Color.rgb(70, 62, 90)
             affordable -> Color.rgb(58, 92, 140)
             else -> Color.rgb(50, 45, 60)
         }
-        canvas.drawRoundRect(rect, 12f * scale, 12f * scale, fillPaint)
+        drawBubbleBackground(canvas, rect, color)
 
         textPaint.textAlign = Paint.Align.LEFT
         textPaint.textSize = 18f * scale
-        canvas.drawText(title, rect.left + 16f * scale, rect.top + 24f * scale, textPaint)
+        canvas.drawText(title, rect.left + 20f * scale, rect.top + 24f * scale, textPaint)
         textPaint.textSize = 13f * scale
         textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(subtitle, rect.left + 16f * scale, rect.top + 44f * scale, textPaint)
+        canvas.drawText(subtitle, rect.left + 20f * scale, rect.top + 44f * scale, textPaint)
         textPaint.color = Color.WHITE
 
         textPaint.textAlign = Paint.Align.RIGHT
         textPaint.textSize = 18f * scale
         val costLabel = costLabelOverride ?: cost?.let { "${it}g" } ?: "MAX"
-        canvas.drawText(costLabel, rect.right - 16f * scale, rect.top + 34f * scale, textPaint)
+        canvas.drawText(costLabel, rect.right - 20f * scale, rect.top + 34f * scale, textPaint)
         textPaint.textAlign = Paint.Align.CENTER
 
         return rect
@@ -298,10 +318,8 @@ class Hud {
         textPaint.textSize = 19f * s
         canvas.drawText("You survived to wave ${engine.waveManager.waveNumber}", cardRect.centerX(), cardRect.top + 92f * s, textPaint)
 
-        restartButtonRect = RectF(cardRect.centerX() - 100f * s, cardRect.bottom - 90f * s, cardRect.centerX() + 100f * s, cardRect.bottom - 26f * s)
-        fillPaint.style = Paint.Style.FILL
-        fillPaint.color = Color.rgb(60, 140, 70)
-        canvas.drawRoundRect(restartButtonRect, 14f * s, 14f * s, fillPaint)
+        restartButtonRect = RectF(cardRect.centerX() - 80f * s, cardRect.bottom - 90f * s, cardRect.centerX() + 80f * s, cardRect.bottom - 26f * s)
+        drawBubbleBackground(canvas, restartButtonRect, Color.rgb(60, 140, 70))
         textPaint.textSize = 21f * s
         canvas.drawText("Rebuild", restartButtonRect.centerX(), restartButtonRect.centerY() + 7f * s, textPaint)
     }
