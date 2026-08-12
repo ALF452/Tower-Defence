@@ -58,9 +58,14 @@ class WaveManager {
         val spawnY = centerY + arenaRadius * kotlin.math.sin(angle)
 
         val baseHealth = 30f + (waveNumber - 1) * 18f
-        val baseSpeed = 40f + min(waveNumber * 1.5f, 40f)
+        // Speed keeps climbing every wave (capped only as a defensive backstop far past
+        // any realistic run length) instead of plateauing around wave 27 like it used to.
+        val baseSpeed = 40f + min(waveNumber * 1.7f, 300f)
         val baseDamage = 4f + (waveNumber / 3)
-        val baseGold = 5 + waveNumber
+        // Per-kill gold value stops growing past wave 12 (kill *count* keeps growing every
+        // wave regardless), so late-game income no longer scales quadratically with wave
+        // number and outpaces the 1.3x/level upgrade costs the way it used to.
+        val baseGold = 5 + minOf(waveNumber, 12)
 
         val health = if (isTank) baseHealth * 5.5f else baseHealth
         val speed = (if (isTank) baseSpeed * 0.58f else baseSpeed) * visualScale

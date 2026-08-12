@@ -3,6 +3,7 @@ package com.alf452.towerdefence.game
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import com.alf452.towerdefence.ui.Hud
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -86,6 +87,12 @@ class GameEngine {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val hud = Hud()
 
+    // Zombies spawn with their center exactly on the arena boundary, so their
+    // sprite/health bar straddle the edge; clipping world drawing to this path
+    // (rebuilt only on resize, not per frame) keeps the part outside the arena
+    // from rendering as stray pixels over the plain backdrop.
+    private val arenaClipPath = Path()
+
     private val maxLevel = 20
     private val specialMaxLevel = 5
     private val specialUnlockWave = 10
@@ -105,6 +112,8 @@ class GameEngine {
         castle.visualScale = scale
         recomputeCannonStats()
         recomputeArcherStats()
+        arenaClipPath.reset()
+        arenaClipPath.addCircle(castle.x, castle.y, arenaRadius(), Path.Direction.CW)
     }
 
     fun arenaRadius(): Float = minOf(screenW, screenH) * 0.45f
@@ -176,7 +185,10 @@ class GameEngine {
 
         val waveCleared = waveManager.allSpawned() && zombies.none { it.isAlive() }
         if (waveCleared) {
-            val bonus = 20 + waveManager.waveNumber * 5
+            // Capped past wave 6 for the same reason as the per-kill gold value in
+            // WaveManager: keeps the wave-clear bonus from compounding with rising kill
+            // counts into a late-game gold surplus that trivializes every upgrade.
+            val bonus = 19 + minOf(waveManager.waveNumber, 6) * 5
             gold += bonus
             lastWaveGoldEarned = bonus
             waveManager.endWave()
@@ -374,6 +386,9 @@ class GameEngine {
     fun draw(canvas: Canvas) {
         drawArenaBackground(canvas)
 
+        canvas.save()
+        canvas.clipPath(arenaClipPath)
+
         for (z in zombies) z.draw(canvas, paint)
         for (p in projectiles) p.draw(canvas, paint)
 
@@ -382,6 +397,8 @@ class GameEngine {
         for (s in cannonSlots) s.draw(canvas, paint, castle, ring)
         for (s in archerSlots) s.draw(canvas, paint, castle, ring)
         for (e in explosions) e.draw(canvas, paint)
+
+        canvas.restore()
 
         hud.draw(canvas, this)
     }
