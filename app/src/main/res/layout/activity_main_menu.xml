@@ -15,14 +15,15 @@
         android:gravity="center"
         android:padding="32dp">
 
-        <TextView
+        <com.alf452.towerdefence.OutlinedTextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:padding="8dp"
             android:text="TOWER DEFENCE"
-            android:textColor="#F0E6D2"
-            android:textSize="36sp"
-            android:textStyle="bold"
-            android:letterSpacing="0.05"
+            android:textColor="#39FF14"
+            android:fontFamily="sans-serif-black"
+            android:textSize="34sp"
+            android:letterSpacing="0.14"
             android:gravity="center" />
 
         <TextView
