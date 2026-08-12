@@ -144,9 +144,18 @@ class GameEngine {
         if (radius <= 0f) return emptyList()
         val rng = Random(1337)
         val list = mutableListOf<Crater>()
-        val count = 16
-        repeat(count) {
-            val angle = rng.nextFloat() * (2f * Math.PI).toFloat()
+        val count = 20
+        // The last few craters are biased into a wedge above the castle instead of scattered
+        // uniformly, so the top of the map reads as more heavily cratered than the rest.
+        val topBiasedCount = 7
+        val topArcCenter = (-Math.PI / 2).toFloat()
+        val topArcWidth = (Math.PI * 2f / 3f).toFloat()
+        repeat(count) { i ->
+            val angle = if (i < count - topBiasedCount) {
+                rng.nextFloat() * (2f * Math.PI).toFloat()
+            } else {
+                topArcCenter + (rng.nextFloat() - 0.5f) * topArcWidth
+            }
             // Keep clear of the castle/ring area in the middle so craters never sit under it.
             val dist = ringRadius() * 1.6f + rng.nextFloat() * (radius * 0.88f - ringRadius() * 1.6f)
             val craterRadius = radius * (0.035f + rng.nextFloat() * 0.09f)
@@ -156,23 +165,23 @@ class GameEngine {
     }
 
     /**
-     * Builds a jagged, irregular crater instead of a perfect circle: the rim/floor outline
+     * Builds a rough, irregular crater instead of a perfect circle: the rim/floor outline
      * and the looser scorched-blast ring around it both walk the same set of angles but jitter
-     * their radius independently and unevenly, so the edge reads as broken/ragged rather than
-     * smooth, like ground actually torn up and scorched by an impact.
+     * their radius independently, so the edge reads as uneven rather than smooth, like ground
+     * actually torn up and scorched by an impact — without going so jagged it looks spiky.
      */
     private fun buildCrater(cx: Float, cy: Float, r: Float, rng: Random): Crater {
-        val vertexCount = 9 + rng.nextInt(6)
+        val vertexCount = 11 + rng.nextInt(6)
         val floorPath = Path()
         val scorchPath = Path()
         for (i in 0 until vertexCount) {
             val a = (2f * Math.PI * i / vertexCount).toFloat()
-            val floorJitter = 0.62f + rng.nextFloat() * 0.66f
+            val floorJitter = 0.8f + rng.nextFloat() * 0.4f
             val fx = cx + r * floorJitter * cos(a)
             val fy = cy + r * floorJitter * sin(a)
             if (i == 0) floorPath.moveTo(fx, fy) else floorPath.lineTo(fx, fy)
 
-            val scorchJitter = 1.3f + rng.nextFloat() * 0.7f
+            val scorchJitter = 1.3f + rng.nextFloat() * 0.4f
             val sx = cx + r * scorchJitter * cos(a)
             val sy = cy + r * scorchJitter * sin(a)
             if (i == 0) scorchPath.moveTo(sx, sy) else scorchPath.lineTo(sx, sy)
@@ -500,28 +509,28 @@ class GameEngine {
             canvas.drawCircle(s.x, s.y, s.radius, paint)
         }
 
-        // Moon-surface arena floor.
-        paint.color = Color.rgb(138, 141, 153)
+        // Moon-surface arena floor, tinted purple instead of plain gray.
+        paint.color = Color.rgb(122, 100, 148)
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
 
         for (c in craters) {
             // Scorched blast halo: a loose, irregular dark ring bleeding out past the crater
             // edge, like burnt/torn-up regolith thrown out by the impact.
             paint.style = Paint.Style.FILL
-            paint.color = Color.argb(80, 42, 34, 28)
+            paint.color = Color.argb(80, 46, 30, 44)
             canvas.drawPath(c.scorchPath, paint)
 
-            paint.color = Color.rgb(92, 95, 104)
+            paint.color = Color.rgb(82, 64, 102)
             canvas.drawPath(c.floorPath, paint)
 
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = c.rimStrokeWidth
-            paint.color = Color.rgb(58, 52, 46)
+            paint.color = Color.rgb(52, 40, 68)
             canvas.drawPath(c.floorPath, paint)
             paint.style = Paint.Style.FILL
         }
 
-        paint.color = Color.rgb(75, 78, 88)
+        paint.color = Color.rgb(70, 54, 90)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 4f * scale
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
