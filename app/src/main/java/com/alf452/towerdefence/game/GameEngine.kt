@@ -40,18 +40,6 @@ private class Asteroid(
     val shape: Path, var rotationDeg: Float, val rotationSpeedDeg: Float
 )
 
-/** Reused pool entry for the game-world shooting stars — fields are reset on each spawn. */
-private class GameShootingStar {
-    var active = false
-    var x = 0f
-    var y = 0f
-    var vx = 0f
-    var vy = 0f
-    var color = Color.WHITE
-    var age = 0f
-    var lifespan = 1f
-}
-
 /**
  * Owns all game state and drives the simulation. [GameView] calls [update] and
  * [draw] once per frame and forwards touch events to [onTouch].
@@ -147,16 +135,9 @@ class GameEngine {
     private var asteroids: List<Asteroid> = emptyList()
     private var worldTime = 0f
 
-    // Same slow-drifting, colored-tail shooting stars as the main menu, ported into the actual
-    // game's space backdrop.
-    private val shootingStars = List(6) { GameShootingStar() }
-    private val shootingStarColors = intArrayOf(
-        Color.rgb(140, 210, 255), // pale blue
-        Color.rgb(255, 150, 220), // pink
-        Color.rgb(255, 214, 120), // gold
-        Color.rgb(180, 160, 255)  // lavender
-    )
-    private var nextShootingStarSpawnIn = 1f
+    // Same slow-drifting, colored-tail shooting stars as the main menu (shared implementation),
+    // ported into the actual game's space backdrop.
+    private val shootingStars = ShootingStarField(poolSize = 6)
 
     private val maxLevel = 20
     private val specialMaxLevel = 5
@@ -314,73 +295,6 @@ class GameEngine {
         return list
     }
 
-    private fun updateShootingStars(dt: Float) {
-        nextShootingStarSpawnIn -= dt
-        if (nextShootingStarSpawnIn <= 0f) {
-            spawnShootingStar()
-            nextShootingStarSpawnIn = 1.2f + Random.nextFloat() * 1.5f
-        }
-        for (star in shootingStars) {
-            if (!star.active) continue
-            star.age += dt
-            star.x += star.vx * dt
-            star.y += star.vy * dt
-            if (star.age >= star.lifespan || star.x < -80f || star.x > screenW + 80f || star.y > screenH + 80f) {
-                star.active = false
-            }
-        }
-    }
-
-    private fun spawnShootingStar() {
-        if (screenW <= 0f || screenH <= 0f) return
-        val star = shootingStars.firstOrNull { !it.active } ?: return
-        val fromLeft = Random.nextBoolean()
-        star.x = if (fromLeft) -40f else screenW + 40f
-        star.y = Random.nextFloat() * screenH * 0.55f
-        val speed = (70f + Random.nextFloat() * 90f) * scale
-        val angleDeg = 18f + Random.nextFloat() * 20f
-        val dirX = if (fromLeft) 1f else -1f
-        val rad = Math.toRadians(angleDeg.toDouble()).toFloat()
-        star.vx = dirX * speed * cos(rad)
-        star.vy = speed * sin(rad)
-        star.color = shootingStarColors[Random.nextInt(shootingStarColors.size)]
-        star.age = 0f
-        star.lifespan = 4f + Random.nextFloat() * 2.5f
-        star.active = true
-    }
-
-    /**
-     * Draws the tail by walking backward along the star's straight-line velocity from its
-     * current head position, instead of keeping a position-history buffer — cheap and
-     * allocation-free every frame.
-     */
-    private fun drawShootingStar(canvas: Canvas, star: GameShootingStar) {
-        val fadeIn = (star.age / 0.6f).coerceIn(0f, 1f)
-        val fadeOut = ((star.lifespan - star.age) / 0.8f).coerceIn(0f, 1f)
-        val globalAlpha = minOf(fadeIn, fadeOut)
-        if (globalAlpha <= 0.02f) return
-
-        val r = Color.red(star.color)
-        val g = Color.green(star.color)
-        val b = Color.blue(star.color)
-
-        val steps = 18
-        val stepTime = 0.0467f
-        paint.style = Paint.Style.FILL
-        for (i in steps downTo 1) {
-            val t = i * stepTime
-            val px = star.x - star.vx * t
-            val py = star.y - star.vy * t
-            val frac = 1f - i.toFloat() / steps
-            val radius = (1.2f + frac * 3.2f) * scale
-            val alpha = (globalAlpha * frac * frac * 220).toInt().coerceIn(0, 255)
-            paint.color = Color.argb(alpha, r, g, b)
-            canvas.drawCircle(px, py, radius, paint)
-        }
-        paint.color = Color.argb((globalAlpha * 255).toInt(), 255, 255, 255)
-        canvas.drawCircle(star.x, star.y, 2.6f * scale, paint)
-    }
-
     /** Jagged local-space rock outline (centered on the origin) reused every frame via canvas transforms. */
     private fun buildRockShape(radius: Float, rng: Random): Path {
         val path = Path()
@@ -398,7 +312,7 @@ class GameEngine {
 
     fun update(dt: Float) {
         worldTime += dt
-        updateShootingStars(dt)
+        shootingStars.update(dt, screenW, screenH, scale)
         for (a in asteroids) {
             a.x += a.speed * dt
             if (a.x - a.radius > screenW) a.x = -a.radius
@@ -749,9 +663,7 @@ class GameEngine {
             canvas.restore()
         }
 
-        for (star in shootingStars) {
-            if (star.active) drawShootingStar(canvas, star)
-        }
+        shootingStars.draw(canvas, paint, scale)
 
         // Moon-surface arena floor, tinted purple instead of plain gray. Style is set
         // explicitly since the asteroid/shooting-star loops above can leave it as STROKE.

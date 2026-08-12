@@ -25,7 +25,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        engine.onSurfaceSize(width.toFloat(), height.toFloat())
+        // onSurfaceSize mutates screenW/H, scale, castle position, and the cached
+        // craters/stars/asteroids lists that GameThread's update()/draw() also read every
+        // frame; without this lock it can observe a torn mix of old/new state mid-frame,
+        // the same class of race the touch handler below is already guarded against.
+        synchronized(engine) {
+            engine.onSurfaceSize(width.toFloat(), height.toFloat())
+        }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {

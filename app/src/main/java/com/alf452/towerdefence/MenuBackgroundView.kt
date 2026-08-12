@@ -8,7 +8,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
-import kotlin.math.cos
+import com.alf452.towerdefence.game.ShootingStarField
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -25,32 +25,13 @@ class MenuBackgroundView @JvmOverloads constructor(
 
     private class Star(val x: Float, val y: Float, val radius: Float, val phase: Float, val speed: Float)
 
-    /** Reused pool entry — fields are reset/reused on each spawn instead of allocating a new one. */
-    private class ShootingStar {
-        var active = false
-        var x = 0f
-        var y = 0f
-        var vx = 0f
-        var vy = 0f
-        var color = Color.WHITE
-        var age = 0f
-        var lifespan = 1f
-    }
-
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var stars: List<Star> = emptyList()
-    private val shootingStars = List(9) { ShootingStar() }
+    private val shootingStars = ShootingStarField(poolSize = 9)
     private val rng = Random(System.nanoTime())
-    private val trailColors = intArrayOf(
-        Color.rgb(140, 210, 255), // pale blue
-        Color.rgb(255, 150, 220), // pink
-        Color.rgb(255, 214, 120), // gold
-        Color.rgb(180, 160, 255)  // lavender
-    )
 
     private var worldTime = 0f
     private var lastFrameNanos = 0L
-    private var nextSpawnIn = 0.6f
 
     private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1000L
@@ -102,78 +83,9 @@ class MenuBackgroundView @JvmOverloads constructor(
             canvas.drawCircle(s.x, s.y, s.radius, paint)
         }
 
-        updateAndDrawShootingStars(canvas, dt)
-    }
-
-    private fun updateAndDrawShootingStars(canvas: Canvas, dt: Float) {
-        nextSpawnIn -= dt
-        if (nextSpawnIn <= 0f) {
-            spawnShootingStar()
-            nextSpawnIn = 1.2f + rng.nextFloat() * 1.5f
-        }
-
-        for (star in shootingStars) {
-            if (!star.active) continue
-            star.age += dt
-            star.x += star.vx * dt
-            star.y += star.vy * dt
-            if (star.age >= star.lifespan || star.x < -80f || star.x > width + 80f || star.y > height + 80f) {
-                star.active = false
-                continue
-            }
-            drawShootingStar(canvas, star)
-        }
-    }
-
-    private fun spawnShootingStar() {
-        val star = shootingStars.firstOrNull { !it.active } ?: return
-        val fromLeft = rng.nextBoolean()
-        star.x = if (fromLeft) -40f else width + 40f
-        star.y = rng.nextFloat() * height * 0.55f
-        val speed = 70f + rng.nextFloat() * 90f // slow drift, not a fast streak
-        val angleDeg = 18f + rng.nextFloat() * 20f // shallow downward angle
-        val dirX = if (fromLeft) 1f else -1f
-        val rad = Math.toRadians(angleDeg.toDouble()).toFloat()
-        star.vx = dirX * speed * cos(rad)
-        star.vy = speed * sin(rad)
-        star.color = trailColors[rng.nextInt(trailColors.size)]
-        star.age = 0f
-        star.lifespan = 4f + rng.nextFloat() * 2.5f
-        star.active = true
-    }
-
-    /**
-     * Draws the tail by walking backward along the star's straight-line velocity from its
-     * current head position, instead of keeping a position-history buffer — cheap and
-     * allocation-free every frame.
-     */
-    private fun drawShootingStar(canvas: Canvas, star: ShootingStar) {
-        val fadeIn = (star.age / 0.6f).coerceIn(0f, 1f)
-        val fadeOut = ((star.lifespan - star.age) / 0.8f).coerceIn(0f, 1f)
-        val globalAlpha = minOf(fadeIn, fadeOut)
-        if (globalAlpha <= 0.02f) return
-
-        val r = Color.red(star.color)
-        val g = Color.green(star.color)
-        val b = Color.blue(star.color)
-
-        // 3x the total tail length via wider spacing between points rather than 3x the point
-        // count, since the pool size just tripled too (3 -> 9) — stacking both multipliers on
-        // draw-call count would mean up to ~279 drawCircle calls/frame for tails alone.
-        val steps = 18
-        val stepTime = 0.0467f
-        for (i in steps downTo 1) {
-            val t = i * stepTime
-            val px = star.x - star.vx * t
-            val py = star.y - star.vy * t
-            val frac = 1f - i.toFloat() / steps
-            val radius = 1.2f + frac * 3.2f
-            val alpha = (globalAlpha * frac * frac * 220).toInt().coerceIn(0, 255)
-            paint.color = Color.argb(alpha, r, g, b)
-            canvas.drawCircle(px, py, radius, paint)
-        }
-        // Bright sparkle at the head.
-        paint.color = Color.argb((globalAlpha * 255).toInt(), 255, 255, 255)
-        canvas.drawCircle(star.x, star.y, 2.6f, paint)
+        // The menu never applied a resolution-scale multiplier to shooting stars, so pass 1f
+        // to keep speed/size exactly as before.
+        shootingStars.update(dt, width.toFloat(), height.toFloat(), 1f)
+        shootingStars.draw(canvas, paint, 1f)
     }
 }
