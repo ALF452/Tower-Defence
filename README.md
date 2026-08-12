@@ -27,16 +27,21 @@ rendering (no game engine, no external art assets — everything is drawn and an
 
 - The app opens on a separate title screen; tapping Play launches the game itself, so the menu
   and the gameplay view are two distinct Activities rather than the game just starting in place.
+- The title screen tracks **high scores** — best wave reached and most kills in a single run —
+  persisted locally (`SharedPreferences`) across app restarts, with a teaser on the menu and a
+  dedicated High Scores screen.
 
 ## Project layout
 
 - `app/src/main/java/com/alf452/towerdefence/` — `MainMenuActivity` (launcher, title screen),
   `GameActivity` (hosts the game, immersive fullscreen), `GameView` (SurfaceView + game loop
-  thread).
+  thread), `HighScoresActivity` + `HighScores` (SharedPreferences-backed best wave/kills store).
 - `.../game/` — simulation: `GameEngine`, `Castle`, `Zombie`, `Weapon` (cannon/archer slots),
   `Projectile`, `WaveManager`, `GameMath`. All visual sizing is resolution-relative
   (`GameEngine.scale`, derived from screen width) rather than fixed pixel constants, so the game
-  reads the same across devices instead of shrinking or overlapping.
+  reads the same across devices instead of shrinking or overlapping. Per-instance-constant
+  `Shader` gradients (zombie body/head shading, weapon mount/barrel shading) are cached rather
+  than reallocated every draw() call to keep GC pressure down during large waves.
 - `.../ui/Hud.kt` — health/shield bars, gold/wave readout (as independently-sized pill chips so
   digit growth can't make them collide), the upgrade popup and game-over popup (both dim the
   battlefield and show a centered card), and touch hit-testing for all of the above.
