@@ -5,10 +5,16 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import com.alf452.towerdefence.ui.Hud
+import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.random.Random
 
 enum class GameState { INTERMISSION, PLAYING, GAME_OVER }
+
+private class Crater(val x: Float, val y: Float, val radius: Float)
+private class Star(val x: Float, val y: Float, val radius: Float, val phase: Float, val speed: Float)
 
 /**
  * Owns all game state and drives the simulation. [GameView] calls [update] and
@@ -93,6 +99,12 @@ class GameEngine {
     // from rendering as stray pixels over the plain backdrop.
     private val arenaClipPath = Path()
 
+    // Moon-surface craters and background starfield, both generated once per
+    // resize (not per frame) and just redrawn/re-tinted every frame afterward.
+    private var craters: List<Crater> = emptyList()
+    private var stars: List<Star> = emptyList()
+    private var worldTime = 0f
+
     private val maxLevel = 20
     private val specialMaxLevel = 5
     private val specialUnlockWave = 10
@@ -114,12 +126,50 @@ class GameEngine {
         recomputeArcherStats()
         arenaClipPath.reset()
         arenaClipPath.addCircle(castle.x, castle.y, arenaRadius(), Path.Direction.CW)
+        craters = generateCraters()
+        stars = generateStars()
     }
 
     fun arenaRadius(): Float = minOf(screenW, screenH) * 0.45f
     fun ringRadius(): Float = castle.radius * 1.25f
 
+    private fun generateCraters(): List<Crater> {
+        val radius = arenaRadius()
+        if (radius <= 0f) return emptyList()
+        val rng = Random(1337)
+        val list = mutableListOf<Crater>()
+        val count = 16
+        repeat(count) {
+            val angle = rng.nextFloat() * (2f * Math.PI).toFloat()
+            // Keep clear of the castle/ring area in the middle so craters never sit under it.
+            val dist = ringRadius() * 1.6f + rng.nextFloat() * (radius * 0.88f - ringRadius() * 1.6f)
+            val craterRadius = radius * (0.035f + rng.nextFloat() * 0.09f)
+            list.add(Crater(castle.x + dist * cos(angle), castle.y + dist * sin(angle), craterRadius))
+        }
+        return list
+    }
+
+    private fun generateStars(): List<Star> {
+        if (screenW <= 0f || screenH <= 0f) return emptyList()
+        val rng = Random(7331)
+        val list = mutableListOf<Star>()
+        val radius = arenaRadius()
+        var attempts = 0
+        while (list.size < 70 && attempts < 700) {
+            attempts++
+            val x = rng.nextFloat() * screenW
+            val y = rng.nextFloat() * screenH
+            if (GameMath.distance(x, y, castle.x, castle.y) <= radius * 1.05f) continue
+            val starRadius = (1f + rng.nextFloat() * 1.8f) * scale
+            val phase = rng.nextFloat() * (2f * Math.PI).toFloat()
+            val speed = 1.2f + rng.nextFloat() * 2.4f
+            list.add(Star(x, y, starRadius, phase, speed))
+        }
+        return list
+    }
+
     fun update(dt: Float) {
+        worldTime += dt
         castle.update(dt)
 
         // Zombie/projectile simulation (including in-progress death animations
@@ -404,10 +454,37 @@ class GameEngine {
     }
 
     private fun drawArenaBackground(canvas: Canvas) {
+        // Night sky, drawn first so the starfield and (later) the moon-surface
+        // arena disc layer cleanly on top of it every frame.
+        paint.shader = null
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(58, 46, 74)
+        paint.color = Color.rgb(6, 6, 14)
+        canvas.drawRect(0f, 0f, screenW, screenH, paint)
+
+        for (s in stars) {
+            val twinkle = 0.5f + 0.5f * sin(worldTime * s.speed + s.phase)
+            paint.color = Color.argb((90 + twinkle * 165).toInt(), 255, 255, 255)
+            canvas.drawCircle(s.x, s.y, s.radius, paint)
+        }
+
+        // Moon-surface arena floor.
+        paint.color = Color.rgb(138, 141, 153)
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)
-        paint.color = Color.rgb(45, 36, 60)
+
+        for (c in craters) {
+            paint.color = Color.rgb(108, 111, 122)
+            canvas.drawCircle(c.x, c.y, c.radius, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = c.radius * 0.22f
+            paint.color = Color.rgb(90, 93, 104)
+            canvas.drawCircle(c.x, c.y, c.radius * 0.8f, paint)
+            paint.style = Paint.Style.FILL
+            // Small highlight crescent to hint at a light source, like a real crater rim.
+            paint.color = Color.argb(70, 200, 202, 212)
+            canvas.drawCircle(c.x - c.radius * 0.3f, c.y - c.radius * 0.3f, c.radius * 0.32f, paint)
+        }
+
+        paint.color = Color.rgb(75, 78, 88)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 4f * scale
         canvas.drawCircle(castle.x, castle.y, arenaRadius(), paint)

@@ -29,8 +29,8 @@
 
     <Button
         android:id="@+id/playButton"
-        android:layout_width="220dp"
-        android:layout_height="64dp"
+        android:layout_width="170dp"
+        android:layout_height="108dp"
         android:background="@drawable/bg_button_primary"
         android:text="PLAY"
         android:textColor="#FFFFFF"
@@ -40,14 +40,15 @@
 
     <Button
         android:id="@+id/highScoresButton"
-        android:layout_width="220dp"
-        android:layout_height="52dp"
-        android:layout_marginTop="14dp"
+        android:layout_width="170dp"
+        android:layout_height="92dp"
+        android:layout_marginTop="18dp"
         android:background="@drawable/bg_button_secondary"
-        android:text="HIGH SCORES"
+        android:text="HIGH\nSCORES"
         android:textColor="#F0E6D2"
-        android:textSize="16sp"
-        android:textStyle="bold" />
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:lineSpacingExtra="1dp" />
 
     <TextView
         android:id="@+id/statsTeaserText"
