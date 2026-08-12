@@ -23,6 +23,13 @@ private class Crater(val floorPath: Path, val scorchPath: Path, val rimStrokeWid
 private class Star(val x: Float, val y: Float, val radius: Float, val phase: Float, val speed: Float)
 
 /**
+ * A neon blood splatter left where a zombie died, sized off that zombie's radius. The blob
+ * offsets/radii are generated once at kill time (not per frame) and just redrawn every frame
+ * afterward, same allocation-free pattern as [Crater].
+ */
+private class BloodSplatter(val x: Float, val y: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
+
+/**
  * Owns all game state and drives the simulation. [GameView] calls [update] and
  * [draw] once per frame and forwards touch events to [onTouch].
  */
@@ -44,6 +51,11 @@ class GameEngine {
     val zombies = mutableListOf<Zombie>()
     val projectiles = mutableListOf<Projectile>()
     private val explosions = mutableListOf<Explosion>()
+
+    // Neon blood splatters left at each kill spot, wiped at the start of every wave (and hard
+    // capped in between) so a long run never accumulates enough decals to slow the game down.
+    private val bloodSplatters = mutableListOf<BloodSplatter>()
+    private val maxBloodSplatters = 160
 
     // Cannon slots unlock in this order: N, E, S, W.
     val cannonSlots = listOf(
@@ -283,6 +295,7 @@ class GameEngine {
                 goldFromKills += z.goldReward
                 z.rewardClaimed = true
                 killCount++
+                spawnBloodSplatter(z)
             }
         }
         gold += goldFromKills
@@ -391,12 +404,37 @@ class GameEngine {
         if (state != GameState.INTERMISSION) return
         waveManager.startWave(waveManager.waveNumber)
         state = GameState.PLAYING
+        // Wipe the last wave's blood splatters so the decal count never grows unbounded.
+        bloodSplatters.clear()
+    }
+
+    /**
+     * Leaves a neon splatter at [zombie]'s death spot, sized off its radius (tanks leave a
+     * bigger, denser splash). Blob offsets/radii are generated once here, not per frame; the
+     * list itself is capped so even an unusually kill-heavy wave stays bounded.
+     */
+    private fun spawnBloodSplatter(zombie: Zombie) {
+        if (bloodSplatters.size >= maxBloodSplatters) bloodSplatters.removeAt(0)
+        val blobCount = if (zombie.isTank) 6 else 3
+        val r = zombie.radius
+        val blobX = FloatArray(blobCount)
+        val blobY = FloatArray(blobCount)
+        val blobRadius = FloatArray(blobCount)
+        for (i in 0 until blobCount) {
+            val angle = Random.nextFloat() * (2f * Math.PI).toFloat()
+            val dist = Random.nextFloat() * r * 0.85f
+            blobX[i] = dist * cos(angle)
+            blobY[i] = dist * sin(angle)
+            blobRadius[i] = r * (0.14f + Random.nextFloat() * 0.22f)
+        }
+        bloodSplatters.add(BloodSplatter(zombie.x, zombie.y, blobX, blobY, blobRadius))
     }
 
     fun restart() {
         zombies.clear()
         projectiles.clear()
         explosions.clear()
+        bloodSplatters.clear()
         gold = 0
         killCount = 0
         cannonLevel = 1
@@ -521,6 +559,14 @@ class GameEngine {
 
         canvas.save()
         canvas.clipPath(arenaClipPath)
+
+        paint.style = Paint.Style.FILL
+        for (b in bloodSplatters) {
+            for (i in b.blobX.indices) {
+                paint.color = Color.argb(180, 40, 255, 60)
+                canvas.drawCircle(b.x + b.blobX[i], b.y + b.blobY[i], b.blobRadius[i], paint)
+            }
+        }
 
         for (z in zombies) z.draw(canvas, paint)
         for (p in projectiles) p.draw(canvas, paint)
