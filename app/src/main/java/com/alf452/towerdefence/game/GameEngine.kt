@@ -267,12 +267,12 @@ class GameEngine {
         val list = mutableListOf<Star>()
         val radius = arenaRadius()
         var attempts = 0
-        while (list.size < 70 && attempts < 700) {
+        while (list.size < 140 && attempts < 1400) {
             attempts++
             val x = rng.nextFloat() * screenW
             val y = rng.nextFloat() * screenH
             if (GameMath.distance(x, y, castle.x, castle.y) <= radius * 1.05f) continue
-            val starRadius = (1f + rng.nextFloat() * 1.8f) * scale
+            val starRadius = GameMath.skewedSmall(rng, 0.6f, 3f) * scale
             val phase = rng.nextFloat() * (2f * Math.PI).toFloat()
             val speed = 1.2f + rng.nextFloat() * 2.4f
             list.add(Star(x, y, starRadius, phase, speed))

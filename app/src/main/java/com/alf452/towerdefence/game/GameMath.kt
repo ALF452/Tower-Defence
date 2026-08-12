@@ -46,4 +46,10 @@ object GameMath {
     }
 
     fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+
+    /** Cubic-skewed value in [min, min+range): biased toward the low end, with only occasional highs. */
+    fun skewedSmall(rng: kotlin.random.Random, min: Float, range: Float): Float {
+        val t = rng.nextFloat()
+        return min + (t * t * t) * range
+    }
 }

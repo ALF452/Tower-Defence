@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
+import com.alf452.towerdefence.game.GameMath
 import com.alf452.towerdefence.game.ShootingStarField
 import kotlin.math.sin
 import kotlin.random.Random
@@ -59,10 +60,10 @@ class MenuBackgroundView @JvmOverloads constructor(
     private fun generateStars(w: Float, h: Float): List<Star> {
         if (w <= 0f || h <= 0f) return emptyList()
         val list = mutableListOf<Star>()
-        repeat(60) {
+        repeat(120) {
             val x = rng.nextFloat() * w
             val y = rng.nextFloat() * h
-            val radius = 1f + rng.nextFloat() * 1.6f
+            val radius = GameMath.skewedSmall(rng, 0.6f, 2.8f)
             val phase = rng.nextFloat() * (2f * Math.PI).toFloat()
             val speed = 1.2f + rng.nextFloat() * 2.2f
             list.add(Star(x, y, radius, phase, speed))
