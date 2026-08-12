@@ -55,7 +55,7 @@ class Castle(var x: Float, var y: Float) {
         health = GameMath.clamp(health, 0f, maxHealth)
     }
 
-    fun wallUpgradeCost(): Int = (40 * Math.pow(1.45, (wallLevel - 1).toDouble())).toInt()
+    fun wallUpgradeCost(): Int = (40 * Math.pow(1.3, (wallLevel - 1).toDouble())).toInt()
 
     fun takeDamage(amount: Float) {
         if (isDead) return

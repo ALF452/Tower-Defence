@@ -76,7 +76,7 @@ class GameEngine {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val hud = Hud()
 
-    private val maxLevel = 14
+    private val maxLevel = 20
     private val specialMaxLevel = 5
     private val specialUnlockWave = 10
 
@@ -258,11 +258,11 @@ class GameEngine {
     fun wallUpgradeCost(): Int = castle.wallUpgradeCost()
     fun cannonUpgradeCost(): Int? {
         if (cannonLevel >= maxLevel) return null
-        return (50 * 1.45.pow((cannonLevel - 1).toDouble())).roundToInt()
+        return (50 * 1.3.pow((cannonLevel - 1).toDouble())).roundToInt()
     }
     fun archerUpgradeCost(): Int? {
         if (archerLevel >= maxLevel) return null
-        return (35 * 1.45.pow(archerLevel.toDouble())).roundToInt()
+        return (35 * 1.3.pow(archerLevel.toDouble())).roundToInt()
     }
 
     fun purchaseWallUpgrade(): Boolean {
@@ -296,17 +296,17 @@ class GameEngine {
 
     fun explosiveUpgradeCost(): Int? {
         if (!specializationsUnlocked() || explosiveLevel >= specialMaxLevel) return null
-        return (150 * 1.45.pow(explosiveLevel.toDouble())).roundToInt()
+        return (150 * 1.3.pow(explosiveLevel.toDouble())).roundToInt()
     }
 
     fun slowUpgradeCost(): Int? {
         if (!specializationsUnlocked() || bleedLevel > 0 || slowLevel >= specialMaxLevel) return null
-        return (120 * 1.45.pow(slowLevel.toDouble())).roundToInt()
+        return (120 * 1.3.pow(slowLevel.toDouble())).roundToInt()
     }
 
     fun bleedUpgradeCost(): Int? {
         if (!specializationsUnlocked() || slowLevel > 0 || bleedLevel >= specialMaxLevel) return null
-        return (120 * 1.45.pow(bleedLevel.toDouble())).roundToInt()
+        return (120 * 1.3.pow(bleedLevel.toDouble())).roundToInt()
     }
 
     fun purchaseExplosiveUpgrade(): Boolean {
