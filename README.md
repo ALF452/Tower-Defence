@@ -50,3 +50,10 @@ access to verify the build locally — treat that CI run as the first real compi
 
 Requirements: JDK 17, Android SDK with platform 34 / build-tools (the Gradle wrapper and AGP
 handle the rest). Open the folder directly in Android Studio for the easiest setup.
+
+`app/debug.keystore` is committed on purpose and `app/build.gradle.kts` points the `debug`
+signing config at it explicitly. Without this, every machine (and every fresh CI runner) falls
+back to auto-generating its own random debug key, so each build gets a different signature and
+Android refuses to install a new APK over an existing one — the only way to "update" would be to
+uninstall first. Do not gitignore or regenerate this file; it only signs debug builds and carries
+no release/Play-signing significance.

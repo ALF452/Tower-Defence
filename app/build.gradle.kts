@@ -15,6 +15,20 @@ android {
         versionName = "1.0"
     }
 
+    // Every build (local or CI) signs with this same committed debug key instead of an
+    // auto-generated one. CI runs on a fresh machine each time with no persistent
+    // ~/.android/debug.keystore, so without this override every build got a different
+    // random signature and Android refused to install new APKs over the old one — this
+    // key is only ever used for the debug build type, not for release/Play signing.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
