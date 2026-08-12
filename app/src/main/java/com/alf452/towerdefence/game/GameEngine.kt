@@ -284,7 +284,7 @@ class GameEngine {
         if (screenW <= 0f || screenH <= 0f) return emptyList()
         val rng = Random(4242)
         val list = mutableListOf<Asteroid>()
-        repeat(8) {
+        repeat(16) {
             val radius = (10f + rng.nextFloat() * 16f) * scale
             val y = rng.nextFloat() * screenH
             val speed = (18f + rng.nextFloat() * 30f) * scale

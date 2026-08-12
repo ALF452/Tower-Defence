@@ -10,6 +10,19 @@
         android:pathData="M0,0h48v48h-48z"
         android:fillColor="#0C0918" />
 
+    <!-- stars scattered in the night sky around the moon, clear of the moon disc (r=19 about 24,24) -->
+    <path android:pathData="M4,4m-0.7,0a0.7,0.7 0,1 1,1.4 0a0.7,0.7 0,1 1,-1.4 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M44,5m-0.6,0a0.6,0.6 0,1 1,1.2 0a0.6,0.6 0,1 1,-1.2 0" android:fillColor="#E8E8FF" />
+    <path android:pathData="M6,43m-0.6,0a0.6,0.6 0,1 1,1.2 0a0.6,0.6 0,1 1,-1.2 0" android:fillColor="#E8E8FF" />
+    <path android:pathData="M43,44m-0.7,0a0.7,0.7 0,1 1,1.4 0a0.7,0.7 0,1 1,-1.4 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M24,2.5m-0.6,0a0.6,0.6 0,1 1,1.2 0a0.6,0.6 0,1 1,-1.2 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M8,9m-0.5,0a0.5,0.5 0,1 1,1 0a0.5,0.5 0,1 1,-1 0" android:fillColor="#E8E8FF" />
+    <path android:pathData="M40,8m-0.5,0a0.5,0.5 0,1 1,1 0a0.5,0.5 0,1 1,-1 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M9,39m-0.5,0a0.5,0.5 0,1 1,1 0a0.5,0.5 0,1 1,-1 0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M39,40m-0.6,0a0.6,0.6 0,1 1,1.2 0a0.6,0.6 0,1 1,-1.2 0" android:fillColor="#E8E8FF" />
+    <path android:pathData="M3,24m-0.5,0a0.5,0.5 0,1 1,1 0a0.5,0.5 0,1 1,-1 0" android:fillColor="#E8E8FF" />
+    <path android:pathData="M45,23m-0.5,0a0.5,0.5 0,1 1,1 0a0.5,0.5 0,1 1,-1 0" android:fillColor="#FFFFFF" />
+
     <!-- moon -->
     <path
         android:pathData="M24,5a19,19 0,1 1,-0.1 0z"
