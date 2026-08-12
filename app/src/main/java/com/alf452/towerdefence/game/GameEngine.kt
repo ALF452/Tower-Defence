@@ -51,7 +51,7 @@ class GameEngine {
     var archerLevel = 0
         private set
 
-    var gold = 60
+    var gold = 0
         private set
 
     var waveManager = WaveManager()
@@ -196,7 +196,7 @@ class GameEngine {
     fun restart() {
         zombies.clear()
         projectiles.clear()
-        gold = 60
+        gold = 0
         cannonLevel = 1
         archerLevel = 0
         for (s in cannonSlots) s.unlocked = false
