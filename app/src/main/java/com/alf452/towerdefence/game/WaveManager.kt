@@ -36,7 +36,7 @@ class WaveManager {
         val spawnX = centerX + arenaRadius * kotlin.math.cos(angle)
         val spawnY = centerY + arenaRadius * kotlin.math.sin(angle)
 
-        val health = 30f + (waveNumber - 1) * 8f
+        val health = 30f + (waveNumber - 1) * 18f
         val speed = (40f + min(waveNumber * 1.5f, 40f)) * visualScale
         val damage = 4f + (waveNumber / 3)
         val goldReward = 5 + waveNumber

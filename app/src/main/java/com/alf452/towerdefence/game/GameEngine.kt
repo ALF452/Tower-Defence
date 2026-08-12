@@ -65,7 +65,7 @@ class GameEngine {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val hud = Hud()
 
-    private val maxLevel = 10
+    private val maxLevel = 14
 
     init {
         recomputeCannonStats()
@@ -249,8 +249,8 @@ class GameEngine {
         for ((i, slot) in cannonSlots.withIndex()) {
             slot.unlocked = cannonLevel >= thresholds[i]
             slot.damage = 18f + cannonLevel * 6f
-            slot.fireIntervalSec = maxOf(0.35f, 1.4f - cannonLevel * 0.12f)
-            slot.range = (260f + cannonLevel * 18f) * scale
+            slot.fireIntervalSec = maxOf(1.15f, 1.4f - cannonLevel * 0.035f)
+            slot.range = (220f + cannonLevel * 15f) * scale
             slot.splashRadius = (40f + cannonLevel * 4f) * scale
             slot.visualScale = scale
         }
@@ -261,8 +261,8 @@ class GameEngine {
         for ((i, slot) in archerSlots.withIndex()) {
             slot.unlocked = archerLevel >= thresholds[i]
             slot.damage = 8f + archerLevel * 4f
-            slot.fireIntervalSec = maxOf(0.18f, 0.9f - archerLevel * 0.1f)
-            slot.range = (300f + archerLevel * 20f) * scale
+            slot.fireIntervalSec = maxOf(0.6f, 0.9f - archerLevel * 0.03f)
+            slot.range = (255f + archerLevel * 17f) * scale
             slot.visualScale = scale
         }
     }
