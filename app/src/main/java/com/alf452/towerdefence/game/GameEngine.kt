@@ -144,22 +144,62 @@ class GameEngine {
         if (radius <= 0f) return emptyList()
         val rng = Random(1337)
         val list = mutableListOf<Crater>()
-        val count = 20
+        // Placed centers/radii so far, used to reject spots that would overlap an existing
+        // crater instead of letting them cluster on top of each other.
+        val placedX = mutableListOf<Float>()
+        val placedY = mutableListOf<Float>()
+        val placedR = mutableListOf<Float>()
+
+        val count = 24
         // The last few craters are biased into a wedge above the castle instead of scattered
         // uniformly, so the top of the map reads as more heavily cratered than the rest.
-        val topBiasedCount = 7
+        val topBiasedCount = 8
         val topArcCenter = (-Math.PI / 2).toFloat()
         val topArcWidth = (Math.PI * 2f / 3f).toFloat()
+        val minDist = ringRadius() * 1.6f
+        // Arena background (including craters) isn't clipped to the arena circle, so this
+        // stays comfortably inside arenaRadius even after the largest crater's jittered edge.
+        val maxDist = radius * 0.85f
+
         repeat(count) { i ->
-            val angle = if (i < count - topBiasedCount) {
-                rng.nextFloat() * (2f * Math.PI).toFloat()
-            } else {
-                topArcCenter + (rng.nextFloat() - 0.5f) * topArcWidth
+            val isTopBiased = i >= count - topBiasedCount
+            // Skew heavily toward small craters (t^3) so only a handful of the 24 end up
+            // large — a more natural, randomized mix instead of evenly-sized dots.
+            val t = rng.nextFloat()
+            val sizeT = t * t * t
+            val craterRadius = radius * (0.018f + sizeT * 0.1f)
+
+            var bestX = castle.x
+            var bestY = castle.y
+            // Try a bunch of random spots and take the first one that doesn't overlap an
+            // already-placed crater; if none work within the budget, fall back to the last
+            // attempt so every crater still gets drawn somewhere.
+            for (attempt in 0 until 40) {
+                val angle = if (isTopBiased) {
+                    topArcCenter + (rng.nextFloat() - 0.5f) * topArcWidth
+                } else {
+                    rng.nextFloat() * (2f * Math.PI).toFloat()
+                }
+                val dist = minDist + rng.nextFloat() * (maxDist - minDist)
+                val cx = castle.x + dist * cos(angle)
+                val cy = castle.y + dist * sin(angle)
+                bestX = cx
+                bestY = cy
+
+                var overlaps = false
+                for (j in placedX.indices) {
+                    val required = (craterRadius + placedR[j]) * 1.35f
+                    if (GameMath.distance(cx, cy, placedX[j], placedY[j]) < required) {
+                        overlaps = true
+                        break
+                    }
+                }
+                if (!overlaps) break
             }
-            // Keep clear of the castle/ring area in the middle so craters never sit under it.
-            val dist = ringRadius() * 1.6f + rng.nextFloat() * (radius * 0.88f - ringRadius() * 1.6f)
-            val craterRadius = radius * (0.035f + rng.nextFloat() * 0.09f)
-            list.add(buildCrater(castle.x + dist * cos(angle), castle.y + dist * sin(angle), craterRadius, rng))
+            placedX.add(bestX)
+            placedY.add(bestY)
+            placedR.add(craterRadius)
+            list.add(buildCrater(bestX, bestY, craterRadius, rng))
         }
         return list
     }
