@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,8 +31,25 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload debug APK
+      - name: Upload debug APK (build artifact)
         uses: actions/upload-artifact@v4
         with:
           name: tower-defence-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Publish debug APK to a downloadable release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-debug-latest
+          name: Tower Defence — latest debug build
+          body: |
+            Automated debug APK, rebuilt from the latest push to `${{ github.ref_name }}` (${{ github.sha }}).
+
+            To install on Android: download `app-debug.apk` below, open it from your downloads,
+            and allow "install unknown apps" for your browser when prompted.
+          prerelease: true
+          make_latest: false
+          files: app/build/outputs/apk/debug/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
