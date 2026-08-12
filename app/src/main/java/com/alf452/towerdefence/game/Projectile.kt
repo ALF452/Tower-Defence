@@ -11,9 +11,13 @@ import kotlin.math.sin
 
 enum class ProjectileKind { CANNONBALL, ARROW }
 
+/** An on-hit status effect an arrow can carry, from the archer specialization the player chose. */
+enum class ArrowEffect { NONE, SLOW, BLEED }
+
 /**
  * A fired shot travelling toward the point the target occupied when fired.
- * Cannonballs explode for splash damage; arrows hit a single target.
+ * Cannonballs explode for splash damage; arrows hit a single target, optionally
+ * carrying a [ArrowEffect] (slow or bleed) applied on impact.
  */
 class Projectile(
     var x: Float,
@@ -24,7 +28,10 @@ class Projectile(
     val damage: Float,
     val splashRadius: Float,
     private val speed: Float,
-    private val visualScale: Float = 1f
+    private val visualScale: Float = 1f,
+    val effect: ArrowEffect = ArrowEffect.NONE,
+    val effectValue: Float = 0f,
+    val effectDuration: Float = 0f
 ) {
     var alive = true
         private set
@@ -75,7 +82,11 @@ class Projectile(
             }
             ProjectileKind.ARROW -> {
                 paint.style = Paint.Style.STROKE
-                paint.color = Color.rgb(210, 190, 150)
+                paint.color = when (effect) {
+                    ArrowEffect.SLOW -> Color.rgb(150, 205, 235)
+                    ArrowEffect.BLEED -> Color.rgb(220, 140, 130)
+                    ArrowEffect.NONE -> Color.rgb(210, 190, 150)
+                }
                 paint.strokeWidth = 3.5f * s
                 paint.strokeCap = Paint.Cap.ROUND
                 val backX = x - cos(angle) * 18f * s

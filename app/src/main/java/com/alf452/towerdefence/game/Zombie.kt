@@ -8,12 +8,15 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 enum class ZombieState { WALKING, ATTACKING, DYING, DEAD }
 
 /**
- * A little zombie shambling in from the wave edge toward the castle. Limbs are
+ * A little zombie shambling in from the wave edge toward the castle (or, from
+ * wave 10 onward, an occasional larger, tougher Tank Zombie). Limbs are
  * filled, rotated rounded-rect "capsules" (not stroked lines) driven by a
  * walk-cycle phase, so it reads as a solid little creature instead of a stick
  * figure, with no sprite sheet needed for the animation.
@@ -25,7 +28,8 @@ class Zombie(
     val speed: Float,
     val contactDamage: Float,
     val goldReward: Int,
-    private val visualScale: Float = 1f
+    private val visualScale: Float = 1f,
+    val isTank: Boolean = false
 ) {
     var health = maxHealth
     var rewardClaimed = false
@@ -40,9 +44,43 @@ class Zombie(
         private set
     private val deathDurationSec = 0.55f
 
-    val radius = 22f * visualScale
+    // Archer specialization effects (applied by GameEngine on arrow impact).
+    private var slowTimer = 0f
+    private var slowFactor = 1f
+    private var bleedTimer = 0f
+    private var bleedDps = 0f
+
+    val radius = (if (isTank) 22f * 1.9f else 22f) * visualScale
+
+    fun applySlow(factor: Float, durationSec: Float) {
+        slowFactor = min(slowFactor, factor)
+        slowTimer = max(slowTimer, durationSec)
+    }
+
+    fun applyBleed(dps: Float, durationSec: Float) {
+        bleedDps = max(bleedDps, dps)
+        bleedTimer = max(bleedTimer, durationSec)
+    }
 
     fun update(dt: Float, castle: Castle, onDamageCastle: (Float) -> Unit) {
+        if (isAlive()) {
+            if (slowTimer > 0f) {
+                slowTimer -= dt
+                if (slowTimer <= 0f) {
+                    slowTimer = 0f
+                    slowFactor = 1f
+                }
+            }
+            if (bleedTimer > 0f) {
+                bleedTimer -= dt
+                takeDamage(bleedDps * dt)
+                if (bleedTimer <= 0f) {
+                    bleedTimer = 0f
+                    bleedDps = 0f
+                }
+            }
+        }
+
         when (state) {
             ZombieState.WALKING -> {
                 val d = GameMath.distance(x, y, castle.x, castle.y)
@@ -51,10 +89,11 @@ class Zombie(
                     state = ZombieState.ATTACKING
                     attackCooldown = attackIntervalSec * 0.5f
                 } else {
+                    val effectiveSpeed = speed * slowFactor
                     facingAngle = GameMath.angleTo(x, y, castle.x, castle.y)
-                    x += cos(facingAngle) * speed * dt
-                    y += sin(facingAngle) * speed * dt
-                    walkPhase += dt * (speed / (18f * visualScale))
+                    x += cos(facingAngle) * effectiveSpeed * dt
+                    y += sin(facingAngle) * effectiveSpeed * dt
+                    walkPhase += dt * (effectiveSpeed / (18f * visualScale))
                 }
             }
             ZombieState.ATTACKING -> {
@@ -111,23 +150,26 @@ class Zombie(
         }
 
         val swing = sin(walkPhase) * 0.6f
-        val outline = Color.rgb(24, 46, 24)
+        val bodyColor = if (isTank) Color.rgb(90, 78, 70) else Color.rgb(58, 104, 58)
+        val bodyColorLight = if (isTank) Color.rgb(120, 104, 92) else Color.rgb(96, 156, 90)
+        val limbColor = if (isTank) Color.rgb(78, 66, 58) else Color.rgb(58, 104, 58)
+        val armColor = if (isTank) Color.rgb(86, 74, 64) else Color.rgb(66, 116, 66)
+        val headLight = if (isTank) Color.rgb(150, 90, 80) else Color.rgb(120, 172, 112)
+        val headDark = if (isTank) Color.rgb(100, 56, 50) else Color.rgb(80, 132, 78)
+        val outline = if (isTank) Color.rgb(30, 22, 18) else Color.rgb(24, 46, 24)
         val limbWidth = radius * 0.34f
 
         // Legs.
-        drawLimb(canvas, paint, 0f, radius * 0.15f, swing, radius * 0.75f, limbWidth, Color.rgb(58, 104, 58), outline)
-        drawLimb(canvas, paint, 0f, radius * 0.15f, -swing, radius * 0.75f, limbWidth, Color.rgb(58, 104, 58), outline)
+        drawLimb(canvas, paint, 0f, radius * 0.15f, swing, radius * 0.75f, limbWidth, limbColor, outline)
+        drawLimb(canvas, paint, 0f, radius * 0.15f, -swing, radius * 0.75f, limbWidth, limbColor, outline)
 
         // Arms, reaching forward, roughly opposite phase from the legs.
-        drawLimb(canvas, paint, 0f, -radius * 0.1f, -swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, Color.rgb(66, 116, 66), outline)
-        drawLimb(canvas, paint, 0f, -radius * 0.1f, swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, Color.rgb(66, 116, 66), outline)
+        drawLimb(canvas, paint, 0f, -radius * 0.1f, -swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, armColor, outline)
+        drawLimb(canvas, paint, 0f, -radius * 0.1f, swing * 0.8f - 0.35f, radius * 0.68f, limbWidth * 0.85f, armColor, outline)
 
         // Torso, shaded with a vertical gradient for a rounder look.
         val torsoRect = RectF(-radius * 0.42f, -radius * 0.42f, radius * 0.42f, radius * 0.28f)
-        paint.shader = LinearGradient(
-            0f, torsoRect.top, 0f, torsoRect.bottom,
-            Color.rgb(96, 156, 90), Color.rgb(58, 104, 58), Shader.TileMode.CLAMP
-        )
+        paint.shader = LinearGradient(0f, torsoRect.top, 0f, torsoRect.bottom, bodyColorLight, bodyColor, Shader.TileMode.CLAMP)
         paint.style = Paint.Style.FILL
         canvas.drawRoundRect(torsoRect, radius * 0.16f, radius * 0.16f, paint)
         paint.shader = null
@@ -136,13 +178,18 @@ class Zombie(
         paint.color = outline
         canvas.drawRoundRect(torsoRect, radius * 0.16f, radius * 0.16f, paint)
 
+        if (isTank) {
+            // A couple of armor plates for a bulkier, tougher silhouette.
+            paint.style = Paint.Style.FILL
+            paint.color = Color.rgb(64, 54, 48)
+            canvas.drawRect(torsoRect.left + radius * 0.06f, torsoRect.top + radius * 0.08f, torsoRect.left + radius * 0.22f, torsoRect.bottom - radius * 0.04f, paint)
+            canvas.drawRect(torsoRect.right - radius * 0.22f, torsoRect.top + radius * 0.08f, torsoRect.right - radius * 0.06f, torsoRect.bottom - radius * 0.04f, paint)
+        }
+
         // Head, radial-shaded so it reads as round rather than a flat disc.
         val headCenterY = -radius * 0.62f
         val headR = radius * 0.34f
-        paint.shader = RadialGradient(
-            -headR * 0.3f, headCenterY - headR * 0.3f, headR * 1.4f,
-            Color.rgb(120, 172, 112), Color.rgb(80, 132, 78), Shader.TileMode.CLAMP
-        )
+        paint.shader = RadialGradient(-headR * 0.3f, headCenterY - headR * 0.3f, headR * 1.4f, headLight, headDark, Shader.TileMode.CLAMP)
         paint.style = Paint.Style.FILL
         canvas.drawCircle(0f, headCenterY, headR, paint)
         paint.shader = null
@@ -163,6 +210,7 @@ class Zombie(
 
         if (state != ZombieState.DYING) {
             drawHealthBar(canvas, paint)
+            drawStatusIcons(canvas, paint)
         }
     }
 
@@ -194,5 +242,22 @@ class Zombie(
         canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x + barWidth / 2f, y - radius * 1.3f + barHeight, paint)
         paint.color = Color.rgb(200, 40, 40)
         canvas.drawRect(x - barWidth / 2f, y - radius * 1.3f, x - barWidth / 2f + barWidth * ratio, y - radius * 1.3f + barHeight, paint)
+    }
+
+    private fun drawStatusIcons(canvas: Canvas, paint: Paint) {
+        val iconY = y - radius * 1.55f
+        var iconX = x - 8f * visualScale
+        if (slowTimer > 0f) {
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f * visualScale
+            paint.color = Color.argb(210, 90, 180, 255)
+            canvas.drawCircle(iconX, iconY, 5f * visualScale, paint)
+            iconX += 14f * visualScale
+        }
+        if (bleedTimer > 0f) {
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb(220, 200, 30, 30)
+            canvas.drawCircle(iconX, iconY, 4.5f * visualScale, paint)
+        }
     }
 }

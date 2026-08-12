@@ -15,9 +15,15 @@ rendering (no game engine, no external art assets — everything is drawn and an
     the wall ring (up to 4).
   - **Archer Towers** — the "other" castle weapon; unlocks and upgrades fast-firing archers
     (up to 4).
-- Each wave spawns more zombies than the last, with more health and speed.
+- Each wave spawns more zombies than the last, with more health and speed. From wave 10 onward,
+  a growing number of larger, tankier **Tank Zombies** are mixed in — 1 at wave 10, +1 more
+  every 2 waves after that.
 - Zombies have a procedural walk cycle (swinging limbs) and a collapse-and-fade death animation.
   Cannons recoil and flash when they fire; archers visibly draw their bow before loosing an arrow.
+- Once wave 10 is cleared, two more upgrade tracks unlock: **Explosive Rounds** (bigger cannon
+  blast radius, with a matching explosion animation) and an archer specialization choice between
+  **Slow Arrows** (temporary speed debuff on hit) and **Bleed Arrows** (damage over time on hit) —
+  picking one locks out the other for that run.
 
 - The app opens on a separate title screen; tapping Play launches the game itself, so the menu
   and the gameplay view are two distinct Activities rather than the game just starting in place.

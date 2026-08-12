@@ -24,6 +24,9 @@ class Hud {
     private var wallButtonRect = RectF()
     private var cannonButtonRect = RectF()
     private var archerButtonRect = RectF()
+    private var explosiveButtonRect = RectF()
+    private var slowButtonRect = RectF()
+    private var bleedButtonRect = RectF()
     private var startWaveButtonRect = RectF()
     private var restartButtonRect = RectF()
 
@@ -101,14 +104,27 @@ class Hud {
         val s = engine.scale
         val w = engine.screenW
         val h = engine.screenH
+        val unlocked = engine.specializationsUnlocked()
 
         // Dim the paused battlefield behind the popup so it reads as a modal.
         fillPaint.style = Paint.Style.FILL
         fillPaint.color = Color.argb(165, 8, 6, 14)
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
+        val buttonHeight = 58f * s
+        val rowGap = 12f * s
+        val headerHeight = 74f * s
+        val dividerGap = 30f * s
+        val finalGap = 20f * s
+
+        // Base 3 rows always show; specializations add a divider label plus 2 more rows
+        // (Explosive Rounds, and Slow/Bleed sharing one row) once wave 10 is cleared.
+        var contentHeight = headerHeight + 3 * (buttonHeight + rowGap)
+        if (unlocked) contentHeight += dividerGap + 2 * (buttonHeight + rowGap)
+        contentHeight += finalGap + buttonHeight + 16f * s // safety margin
+
         val cardWidth = w * 0.88f
-        val cardHeight = minOf(h * 0.74f, 620f * s)
+        val cardHeight = minOf(h * 0.92f, contentHeight)
         val cardLeft = (w - cardWidth) / 2f
         val cardTop = (h - cardHeight) / 2f
         val cardRect = RectF(cardLeft, cardTop, cardLeft + cardWidth, cardTop + cardHeight)
@@ -126,9 +142,8 @@ class Hud {
         fillPaint.color = Color.argb(90, 255, 255, 255)
         canvas.drawRect(cardRect.left + 24f * s, cardRect.top + 56f * s, cardRect.right - 24f * s, cardRect.top + 57f * s, fillPaint)
 
-        val buttonHeight = 60f * s
         val buttonMargin = 20f * s
-        var buttonTop = cardRect.top + 74f * s
+        var buttonTop = cardRect.top + headerHeight
         val buttonWidth = cardRect.width() - buttonMargin * 2f
 
         wallButtonRect = drawUpgradeButton(
@@ -136,22 +151,63 @@ class Hud {
             "Castle Walls (Lv ${engine.castle.wallLevel})", "Shield/HP up",
             engine.wallUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 12f * s
+        buttonTop += buttonHeight + rowGap
 
         cannonButtonRect = drawUpgradeButton(
             canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
             "Castle Cannons (Lv ${engine.cannonLevel})", "Damage/rate/range up",
             engine.cannonUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 12f * s
+        buttonTop += buttonHeight + rowGap
 
         archerButtonRect = drawUpgradeButton(
             canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
             "Archer Towers (Lv ${engine.archerLevel})", "Unlock/upgrade archers",
             engine.archerUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + 20f * s
+        buttonTop += buttonHeight + rowGap
 
+        if (unlocked) {
+            textPaint.textAlign = Paint.Align.LEFT
+            textPaint.textSize = 14f * s
+            textPaint.color = Color.argb(190, 255, 255, 255)
+            canvas.drawText("SPECIALIZATIONS", cardRect.left + buttonMargin, buttonTop + dividerGap * 0.7f, textPaint)
+            textPaint.color = Color.WHITE
+            textPaint.textAlign = Paint.Align.CENTER
+            buttonTop += dividerGap
+
+            explosiveButtonRect = drawUpgradeButton(
+                canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
+                "Explosive Rounds (Lv ${engine.explosiveLevel})", "Cannon blast radius up",
+                engine.explosiveUpgradeCost(), engine.gold, s
+            )
+            buttonTop += buttonHeight + rowGap
+
+            val halfWidth = (buttonWidth - rowGap) / 2f
+            val bleedChosen = engine.bleedLevel > 0
+            val slowChosen = engine.slowLevel > 0
+            slowButtonRect = drawUpgradeButton(
+                canvas, cardRect.left + buttonMargin, buttonTop, halfWidth, buttonHeight,
+                if (slowChosen) "Slow Arrows (Lv ${engine.slowLevel})" else "Slow Arrows",
+                if (bleedChosen) "Locked" else "Cripples on hit",
+                if (bleedChosen) null else engine.slowUpgradeCost(), engine.gold, s,
+                costLabelOverride = if (bleedChosen) "Locked" else null
+            )
+            bleedButtonRect = drawUpgradeButton(
+                canvas, cardRect.left + buttonMargin + halfWidth + rowGap, buttonTop, halfWidth, buttonHeight,
+                if (bleedChosen) "Bleed Arrows (Lv ${engine.bleedLevel})" else "Bleed Arrows",
+                if (slowChosen) "Locked" else "Damage over time",
+                if (slowChosen) null else engine.bleedUpgradeCost(), engine.gold, s,
+                costLabelOverride = if (slowChosen) "Locked" else null
+            )
+            buttonTop += buttonHeight + rowGap
+        } else {
+            explosiveButtonRect = RectF()
+            slowButtonRect = RectF()
+            bleedButtonRect = RectF()
+        }
+
+        buttonTop += finalGap - rowGap
         startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + buttonHeight)
         fillPaint.style = Paint.Style.FILL
         fillPaint.color = Color.rgb(60, 140, 70)
@@ -179,7 +235,8 @@ class Hud {
 
     private fun drawUpgradeButton(
         canvas: Canvas, left: Float, top: Float, width: Float, height: Float,
-        title: String, subtitle: String, cost: Int?, gold: Int, scale: Float
+        title: String, subtitle: String, cost: Int?, gold: Int, scale: Float,
+        costLabelOverride: String? = null
     ): RectF {
         val rect = RectF(left, top, left + width, top + height)
         val affordable = cost != null && gold >= cost
@@ -201,7 +258,7 @@ class Hud {
 
         textPaint.textAlign = Paint.Align.RIGHT
         textPaint.textSize = 18f * scale
-        val costLabel = cost?.let { "${it}g" } ?: "MAX"
+        val costLabel = costLabelOverride ?: cost?.let { "${it}g" } ?: "MAX"
         canvas.drawText(costLabel, rect.right - 16f * scale, rect.top + 34f * scale, textPaint)
         textPaint.textAlign = Paint.Align.CENTER
 
@@ -242,6 +299,9 @@ class Hud {
                     wallButtonRect.contains(x, y) -> engine.purchaseWallUpgrade()
                     cannonButtonRect.contains(x, y) -> engine.purchaseCannonUpgrade()
                     archerButtonRect.contains(x, y) -> engine.purchaseArcherUpgrade()
+                    explosiveButtonRect.contains(x, y) -> engine.purchaseExplosiveUpgrade()
+                    slowButtonRect.contains(x, y) -> engine.purchaseSlowUpgrade()
+                    bleedButtonRect.contains(x, y) -> engine.purchaseBleedUpgrade()
                     startWaveButtonRect.contains(x, y) -> engine.startNextWave()
                 }
             }

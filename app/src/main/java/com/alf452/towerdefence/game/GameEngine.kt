@@ -30,6 +30,7 @@ class GameEngine {
     val castle = Castle(0f, 0f)
     val zombies = mutableListOf<Zombie>()
     val projectiles = mutableListOf<Projectile>()
+    private val explosions = mutableListOf<Explosion>()
 
     // Cannon slots unlock in this order: N, E, S, W.
     val cannonSlots = listOf(
@@ -51,6 +52,16 @@ class GameEngine {
     var archerLevel = 0
         private set
 
+    // Specializations that unlock once SPECIAL_UNLOCK_WAVE has been cleared. Slow and bleed
+    // are mutually exclusive — choosing one (buying its first level) locks out the other for
+    // the rest of the run, so the two costs gate on each other.
+    var explosiveLevel = 0
+        private set
+    var slowLevel = 0
+        private set
+    var bleedLevel = 0
+        private set
+
     var gold = 0
         private set
 
@@ -66,6 +77,8 @@ class GameEngine {
     val hud = Hud()
 
     private val maxLevel = 14
+    private val specialMaxLevel = 5
+    private val specialUnlockWave = 10
 
     init {
         recomputeCannonStats()
@@ -106,6 +119,9 @@ class GameEngine {
             }
             if (!p.alive) projIter.remove()
         }
+
+        for (e in explosions) e.update(dt)
+        explosions.removeAll { !it.alive }
 
         // Award gold the frame a zombie's health hits zero (while still playing its
         // death animation), before it gets removed from the list below.
@@ -160,13 +176,33 @@ class GameEngine {
     private fun fire(slot: WeaponSlot, target: Zombie, fromX: Float, fromY: Float) {
         val kind = if (slot.type == WeaponType.CANNON) ProjectileKind.CANNONBALL else ProjectileKind.ARROW
         val baseSpeed = if (slot.type == WeaponType.CANNON) 340f else 620f
+
+        var effect = ArrowEffect.NONE
+        var effectValue = 0f
+        var effectDuration = 0f
+        if (kind == ProjectileKind.ARROW) {
+            if (slowLevel > 0) {
+                effect = ArrowEffect.SLOW
+                effectValue = maxOf(0.2f, 0.65f - slowLevel * 0.09f) // fraction of speed retained
+                effectDuration = 2f + slowLevel * 0.2f
+            } else if (bleedLevel > 0) {
+                effect = ArrowEffect.BLEED
+                effectValue = 6f + bleedLevel * 4f // damage per second
+                effectDuration = 3f + bleedLevel * 0.3f
+            }
+        }
+
         projectiles.add(
-            Projectile(fromX, fromY, target.x, target.y, kind, slot.damage, slot.splashRadius, baseSpeed * scale, scale)
+            Projectile(
+                fromX, fromY, target.x, target.y, kind, slot.damage, slot.splashRadius,
+                baseSpeed * scale, scale, effect, effectValue, effectDuration
+            )
         )
     }
 
     private fun applyImpact(p: Projectile) {
         if (p.kind == ProjectileKind.CANNONBALL) {
+            explosions.add(Explosion(p.impactX, p.impactY, p.splashRadius, scale))
             for (z in zombies) {
                 if (z.isAlive() && GameMath.distance(z.x, z.y, p.impactX, p.impactY) <= p.splashRadius) {
                     z.takeDamage(p.damage)
@@ -183,7 +219,14 @@ class GameEngine {
                     closest = z
                 }
             }
-            closest?.takeDamage(p.damage)
+            closest?.let {
+                it.takeDamage(p.damage)
+                when (p.effect) {
+                    ArrowEffect.SLOW -> it.applySlow(p.effectValue, p.effectDuration)
+                    ArrowEffect.BLEED -> it.applyBleed(p.effectValue, p.effectDuration)
+                    ArrowEffect.NONE -> {}
+                }
+            }
         }
     }
 
@@ -196,9 +239,13 @@ class GameEngine {
     fun restart() {
         zombies.clear()
         projectiles.clear()
+        explosions.clear()
         gold = 0
         cannonLevel = 1
         archerLevel = 0
+        explosiveLevel = 0
+        slowLevel = 0
+        bleedLevel = 0
         for (s in cannonSlots) s.unlocked = false
         for (s in archerSlots) s.unlocked = false
         recomputeCannonStats()
@@ -244,14 +291,58 @@ class GameEngine {
         return true
     }
 
+    /** Explosive Rounds and the arrow specializations only appear once this wave has been cleared. */
+    fun specializationsUnlocked(): Boolean = waveManager.waveNumber > specialUnlockWave
+
+    fun explosiveUpgradeCost(): Int? {
+        if (!specializationsUnlocked() || explosiveLevel >= specialMaxLevel) return null
+        return (150 * 1.45.pow(explosiveLevel.toDouble())).roundToInt()
+    }
+
+    fun slowUpgradeCost(): Int? {
+        if (!specializationsUnlocked() || bleedLevel > 0 || slowLevel >= specialMaxLevel) return null
+        return (120 * 1.45.pow(slowLevel.toDouble())).roundToInt()
+    }
+
+    fun bleedUpgradeCost(): Int? {
+        if (!specializationsUnlocked() || slowLevel > 0 || bleedLevel >= specialMaxLevel) return null
+        return (120 * 1.45.pow(bleedLevel.toDouble())).roundToInt()
+    }
+
+    fun purchaseExplosiveUpgrade(): Boolean {
+        val cost = explosiveUpgradeCost() ?: return false
+        if (gold < cost) return false
+        gold -= cost
+        explosiveLevel++
+        recomputeCannonStats()
+        return true
+    }
+
+    fun purchaseSlowUpgrade(): Boolean {
+        val cost = slowUpgradeCost() ?: return false
+        if (gold < cost) return false
+        gold -= cost
+        slowLevel++
+        return true
+    }
+
+    fun purchaseBleedUpgrade(): Boolean {
+        val cost = bleedUpgradeCost() ?: return false
+        if (gold < cost) return false
+        gold -= cost
+        bleedLevel++
+        return true
+    }
+
     private fun recomputeCannonStats() {
         val thresholds = intArrayOf(1, 2, 4, 6)
+        val explosiveMultiplier = 1f + explosiveLevel * 0.2f
         for ((i, slot) in cannonSlots.withIndex()) {
             slot.unlocked = cannonLevel >= thresholds[i]
             slot.damage = 18f + cannonLevel * 6f
             slot.fireIntervalSec = maxOf(1.15f, 1.4f - cannonLevel * 0.035f)
             slot.range = (220f + cannonLevel * 15f) * scale
-            slot.splashRadius = (40f + cannonLevel * 4f) * scale
+            slot.splashRadius = (40f + cannonLevel * 4f) * explosiveMultiplier * scale
             slot.visualScale = scale
         }
     }
@@ -277,6 +368,7 @@ class GameEngine {
         castle.draw(canvas, paint)
         for (s in cannonSlots) s.draw(canvas, paint, castle, ring)
         for (s in archerSlots) s.draw(canvas, paint, castle, ring)
+        for (e in explosions) e.draw(canvas, paint)
 
         hud.draw(canvas, this)
     }
