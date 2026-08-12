@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="night_sky_top">#1B2440</color>
+    <color name="night_sky_bottom">#3A2E52</color>
+</resources>

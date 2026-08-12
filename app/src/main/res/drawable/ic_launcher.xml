@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+
+    <!-- background -->
+    <path
+        android:pathData="M0,0h48v48h-48z"
+        android:fillColor="#2B2140" />
+    <path
+        android:pathData="M24,44a20,20 0,1 1,0.1 0z"
+        android:fillColor="#3E3160" />
+
+    <!-- castle keep body -->
+    <path
+        android:pathData="M14,34 L14,20 L34,20 L34,34 Z"
+        android:fillColor="#B8AA92" />
+
+    <!-- crenellations -->
+    <path
+        android:pathData="M13,20 L13,15 L16,15 L16,18 L19,18 L19,15 L22,15 L22,18 L26,18 L26,15 L29,15 L29,18 L32,18 L32,15 L35,15 L35,20 Z"
+        android:fillColor="#B8AA92" />
+
+    <!-- gate -->
+    <path
+        android:pathData="M21,34 L21,26 A3,3 0,0 1,27 26 L27,34 Z"
+        android:fillColor="#2B2140" />
+
+    <!-- side turret left -->
+    <path
+        android:pathData="M9,34 L9,17 L14,17 L14,34 Z"
+        android:fillColor="#9C8F79" />
+    <path
+        android:pathData="M8,17 L8,13 L10.3,13 L10.3,15 L12.6,15 L12.6,13 L15,13 L15,17 Z"
+        android:fillColor="#9C8F79" />
+
+    <!-- side turret right -->
+    <path
+        android:pathData="M34,34 L34,17 L39,17 L39,34 Z"
+        android:fillColor="#9C8F79" />
+    <path
+        android:pathData="M33,17 L33,13 L35.3,13 L35.3,15 L37.6,15 L37.6,13 L40,13 L40,17 Z"
+        android:fillColor="#9C8F79" />
+
+    <!-- flag pole -->
+    <path
+        android:pathData="M24,15 L24,8"
+        android:strokeColor="#B8AA92"
+        android:strokeWidth="1" />
+    <!-- flag -->
+    <path
+        android:pathData="M24,8 L31,10.5 L24,13 Z"
+        android:fillColor="#C0392B" />
+
+    <!-- ground -->
+    <path
+        android:pathData="M6,34 L42,34 L42,37 L6,37 Z"
+        android:fillColor="#4C7A3D" />
+</vector>
