@@ -19,7 +19,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:padding="8dp"
-            android:text="TOWER DEFENCE"
+            android:text="LUNAR DEFENCE"
             android:textColor="#39FF14"
             android:fontFamily="sans-serif-black"
             android:textSize="34sp"

@@ -1,4 +1,4 @@
-# Tower Defence
+# Lunar Defence
 
 A top-down Android tower defence game built with Kotlin and plain `android.graphics` Canvas
 rendering (no game engine, no external art assets — everything is drawn and animated in code).
