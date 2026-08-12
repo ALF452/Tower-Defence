@@ -1,74 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/bg_menu_gradient"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp">
+    android:background="@drawable/bg_menu_gradient">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="TOWER DEFENCE"
-        android:textColor="#F0E6D2"
-        android:textSize="36sp"
-        android:textStyle="bold"
-        android:letterSpacing="0.05"
-        android:gravity="center" />
+    <com.alf452.towerdefence.MenuBackgroundView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="48dp"
-        android:text="Defend the castle from the horde"
-        android:textColor="#B8AACC"
-        android:textSize="16sp"
-        android:gravity="center" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
 
-    <Button
-        android:id="@+id/playButton"
-        android:layout_width="170dp"
-        android:layout_height="108dp"
-        android:background="@drawable/bg_button_primary"
-        android:text="PLAY"
-        android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:elevation="4dp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="TOWER DEFENCE"
+            android:textColor="#F0E6D2"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.05"
+            android:gravity="center" />
 
-    <Button
-        android:id="@+id/highScoresButton"
-        android:layout_width="170dp"
-        android:layout_height="92dp"
-        android:layout_marginTop="18dp"
-        android:background="@drawable/bg_button_secondary"
-        android:text="HIGH\nSCORES"
-        android:textColor="#F0E6D2"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        android:lineSpacingExtra="1dp" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="48dp"
+            android:text="Defend the castle from the horde"
+            android:textColor="#B8AACC"
+            android:textSize="16sp"
+            android:gravity="center" />
 
-    <TextView
-        android:id="@+id/statsTeaserText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Best wave: 0  •  Best kills: 0"
-        android:textColor="#B8AACC"
-        android:textSize="13sp"
-        android:gravity="center" />
+        <Button
+            android:id="@+id/playButton"
+            android:layout_width="170dp"
+            android:layout_height="108dp"
+            android:background="@drawable/bg_button_primary"
+            android:text="PLAY"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:elevation="4dp" />
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginTop="28dp"
-        android:layout_marginEnd="16dp"
-        android:text="Earn gold from kills to upgrade your walls, cannons, and archers between waves."
-        android:textColor="#8C7FA0"
-        android:textSize="13sp"
-        android:gravity="center" />
+        <Button
+            android:id="@+id/highScoresButton"
+            android:layout_width="170dp"
+            android:layout_height="92dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/bg_button_secondary"
+            android:text="HIGH\nSCORES"
+            android:textColor="#F0E6D2"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:lineSpacingExtra="1dp" />
 
-</LinearLayout>
+        <TextView
+            android:id="@+id/statsTeaserText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Best wave: 0  •  Best kills: 0"
+            android:textColor="#B8AACC"
+            android:textSize="13sp"
+            android:gravity="center" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="28dp"
+            android:layout_marginEnd="16dp"
+            android:text="Earn gold from kills to upgrade your walls, cannons, and archers between waves."
+            android:textColor="#8C7FA0"
+            android:textSize="13sp"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+</FrameLayout>

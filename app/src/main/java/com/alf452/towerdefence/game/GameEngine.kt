@@ -150,10 +150,10 @@ class GameEngine {
         val placedY = mutableListOf<Float>()
         val placedR = mutableListOf<Float>()
 
-        val count = 24
+        val count = 48
         // The last few craters are biased into a wedge above the castle instead of scattered
         // uniformly, so the top of the map reads as more heavily cratered than the rest.
-        val topBiasedCount = 8
+        val topBiasedCount = 16
         val topArcCenter = (-Math.PI / 2).toFloat()
         val topArcWidth = (Math.PI * 2f / 3f).toFloat()
         val minDist = ringRadius() * 1.6f
@@ -163,7 +163,7 @@ class GameEngine {
 
         repeat(count) { i ->
             val isTopBiased = i >= count - topBiasedCount
-            // Skew heavily toward small craters (t^3) so only a handful of the 24 end up
+            // Skew heavily toward small craters (t^3) so only a handful of the 48 end up
             // large — a more natural, randomized mix instead of evenly-sized dots.
             val t = rng.nextFloat()
             val sizeT = t * t * t
@@ -173,8 +173,9 @@ class GameEngine {
             var bestY = castle.y
             // Try a bunch of random spots and take the first one that doesn't overlap an
             // already-placed crater; if none work within the budget, fall back to the last
-            // attempt so every crater still gets drawn somewhere.
-            for (attempt in 0 until 40) {
+            // attempt so every crater still gets drawn somewhere. More attempts than before
+            // since twice as many craters means less free space to find a clean spot in.
+            for (attempt in 0 until 70) {
                 val angle = if (isTopBiased) {
                     topArcCenter + (rng.nextFloat() - 0.5f) * topArcWidth
                 } else {
