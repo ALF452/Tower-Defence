@@ -28,7 +28,10 @@ class MenuBackgroundView @JvmOverloads constructor(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var stars: List<Star> = emptyList()
-    private val shootingStars = ShootingStarField(poolSize = 9)
+    // Sized with headroom above the ~5.9 average concurrent stars implied by the shared
+    // lifespan/spawn-interval tuning (see GameEngine's shootingStars for the same math), so
+    // spawns essentially never get silently dropped for lack of a free pool slot.
+    private val shootingStars = ShootingStarField(poolSize = 16)
     private val rng = Random(System.nanoTime())
 
     private var worldTime = 0f

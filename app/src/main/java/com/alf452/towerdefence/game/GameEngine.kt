@@ -170,8 +170,11 @@ class GameEngine {
     private var worldTime = 0f
 
     // Same slow-drifting, colored-tail shooting stars as the main menu (shared implementation),
-    // ported into the actual game's space backdrop.
-    private val shootingStars = ShootingStarField(poolSize = 6)
+    // ported into the actual game's space backdrop. Pool sized with headroom well above the
+    // ~5.9 average concurrent stars implied by lifespan/spawn-interval (offered load = mean
+    // lifespan / mean spawn interval ≈ 11.5s / 1.95s), so spawns essentially never get silently
+    // dropped for lack of a free slot.
+    private val shootingStars = ShootingStarField(poolSize = 14)
 
     private val maxLevel = 20
     private val specialMaxLevel = 5

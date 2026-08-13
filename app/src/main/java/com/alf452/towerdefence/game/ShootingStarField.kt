@@ -106,7 +106,9 @@ class ShootingStarField(poolSize: Int) {
         star.vy = speed * sin(rad)
         star.color = colors[Random.nextInt(colors.size)]
         star.age = 0f
-        star.lifespan = 4f + Random.nextFloat() * 2.5f
+        // Long enough to drift most of the way across the screen (and, in-game, plausibly reach
+        // the black hole) before naturally expiring, rather than fading out mid-flight.
+        star.lifespan = 9f + Random.nextFloat() * 5f
         // Pool entries are reused, so a star that was previously consumed must have that state
         // cleared here — otherwise update()'s consuming branch would immediately freeze this
         // freshly-spawned star in place instead of letting it fly.
@@ -128,7 +130,29 @@ class ShootingStarField(poolSize: Int) {
             return
         }
         val fadeIn = (star.age / 0.6f).coerceIn(0f, 1f)
-        val fadeOut = ((star.lifespan - star.age) / 0.8f).coerceIn(0f, 1f)
+
+        // In the last second of life, instead of smoothly dimming, twinkle like a bright star
+        // catching one last flare before it's gone — an oscillating brightness multiplied by a
+        // decaying envelope so it still reliably reaches zero exactly at lifespan regardless of
+        // which phase of the blink it happens to end on. headFlare pulses the head sparkle's
+        // size along with it so the brightest blinks visibly flash bigger, not just louder.
+        val timeLeft = star.lifespan - star.age
+        val blinkWindow = 1f
+        var fadeOut = 1f
+        var headFlare = 1f
+        if (timeLeft < blinkWindow) {
+            val envelope = (timeLeft / blinkWindow).coerceIn(0f, 1f)
+            // Both amplitude and blink are 0-effect / peak-brightness respectively right at the
+            // moment the star enters this window, then ramp the oscillation strength up from
+            // there — without that ramp, fadeOut/headFlare would jump discontinuously the instant
+            // a star crosses into its last second instead of easing into the twinkle.
+            val elapsedInWindow = blinkWindow - timeLeft
+            val amplitude = (elapsedInWindow / blinkWindow).coerceIn(0f, 1f)
+            val blink = 0.5f + 0.5f * cos(elapsedInWindow * 18f)
+            fadeOut = envelope * (1f + (blink - 1f) * amplitude)
+            headFlare = 1f + blink * 0.8f * amplitude
+        }
+
         val globalAlpha = minOf(fadeIn, fadeOut)
         if (globalAlpha <= 0.02f) return
 
@@ -151,9 +175,9 @@ class ShootingStarField(poolSize: Int) {
             paint.color = Color.argb(alpha, r, g, b)
             canvas.drawCircle(px, py, radius, paint)
         }
-        // Bright sparkle at the head.
+        // Bright sparkle at the head, flaring larger during the pre-vanish twinkle above.
         paint.color = Color.argb((globalAlpha * 255).toInt(), 255, 255, 255)
-        canvas.drawCircle(star.x, star.y, 2.6f * scale, paint)
+        canvas.drawCircle(star.x, star.y, 2.6f * scale * headFlare, paint)
     }
 
     /**
