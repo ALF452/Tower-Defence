@@ -25,6 +25,16 @@ class SoundEngine(context: Context) {
         // (which, unlike a dropped SFX, has no way to notice it was evicted and restart itself).
         private const val SFX_PRIORITY = 1
         private const val MUSIC_PRIORITY = 2
+
+        // All levels here are 70% of their original value (a flat 30% volume cut across the
+        // board), kept as one named constant per sound rather than a literal at each play() call
+        // so the music volume in particular — needed in two places below — can't drift out of
+        // sync between them.
+        private const val CANNON_VOLUME = 0.35f
+        private const val BOW_VOLUME = 0.315f
+        private const val ZOMBIE_DEATH_VOLUME = 0.385f
+        private const val CASTLE_HIT_VOLUME = 0.455f
+        private const val MUSIC_VOLUME = 0.245f
     }
 
     private val appContext = context.applicationContext
@@ -60,7 +70,7 @@ class SoundEngine(context: Context) {
             if (status != 0) return@setOnLoadCompleteListener
             loadedSoundIds.add(sampleId)
             if (sampleId == musicSoundId && musicRequested && musicStreamId == 0) {
-                musicStreamId = soundPool.play(musicSoundId, 0.35f, 0.35f, MUSIC_PRIORITY, -1, 1f)
+                musicStreamId = soundPool.play(musicSoundId, MUSIC_VOLUME, MUSIC_VOLUME, MUSIC_PRIORITY, -1, 1f)
             }
         }
     }
@@ -81,19 +91,19 @@ class SoundEngine(context: Context) {
     }
 
     fun playCannonFire() {
-        playIfLoaded(cannonSoundId, 0.5f)
+        playIfLoaded(cannonSoundId, CANNON_VOLUME)
     }
 
     fun playBowShoot() {
-        playIfLoaded(bowSoundId, 0.45f)
+        playIfLoaded(bowSoundId, BOW_VOLUME)
     }
 
     fun playZombieDeath() {
-        playIfLoaded(zombieDeathSoundId, 0.55f)
+        playIfLoaded(zombieDeathSoundId, ZOMBIE_DEATH_VOLUME)
     }
 
     fun playCastleHit() {
-        playIfLoaded(castleHitSoundId, 0.65f)
+        playIfLoaded(castleHitSoundId, CASTLE_HIT_VOLUME)
     }
 
     /**
@@ -107,7 +117,7 @@ class SoundEngine(context: Context) {
         if (musicStreamId != 0) {
             soundPool.resume(musicStreamId)
         } else if (musicSoundId in loadedSoundIds) {
-            musicStreamId = soundPool.play(musicSoundId, 0.35f, 0.35f, MUSIC_PRIORITY, -1, 1f)
+            musicStreamId = soundPool.play(musicSoundId, MUSIC_VOLUME, MUSIC_VOLUME, MUSIC_PRIORITY, -1, 1f)
         }
     }
 
