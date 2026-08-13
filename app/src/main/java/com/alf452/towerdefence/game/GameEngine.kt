@@ -4,8 +4,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
+import android.graphics.Shader
 import com.alf452.towerdefence.ui.Hud
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -38,6 +41,25 @@ private class BloodSplatter(val x: Float, val y: Float, val blobX: FloatArray, v
 private class Asteroid(
     var x: Float, val y: Float, val speed: Float, val radius: Float,
     val shape: Path, var rotationDeg: Float, val rotationSpeedDeg: Float
+)
+
+/**
+ * A distant supermassive black hole floating in the sky beyond the moon's top-right, styled
+ * after Gargantua from Interstellar. The "ring wraps all the way around the sphere" look comes
+ * from a single trick: draw the whole gravitationally-lensed accretion disk as a tilted, squashed
+ * ellipse *behind* a plain black circle (the event horizon) — wherever the ellipse pokes out past
+ * the circle's edge (top, bottom, and both sides, since [diskRx]/[diskRy] are both larger than
+ * [eventHorizonRadius]), it reads as the disk wrapping around the sphere. Geometry and gradients
+ * are built once per resize; only rotation and a slow brightness pulse are animated per frame.
+ */
+private class BlackHole(
+    val cx: Float, val cy: Float,
+    val eventHorizonRadius: Float,
+    val diskRx: Float, val diskRy: Float,
+    val tiltDeg: Float,
+    val glowRadius: Float,
+    val diskShader: Shader,
+    val glowShader: Shader
 )
 
 /**
@@ -141,6 +163,7 @@ class GameEngine {
     private var craters: List<Crater> = emptyList()
     private var stars: List<Star> = emptyList()
     private var asteroids: List<Asteroid> = emptyList()
+    private var blackHole: BlackHole? = null
     private var worldTime = 0f
 
     // Same slow-drifting, colored-tail shooting stars as the main menu (shared implementation),
@@ -171,6 +194,7 @@ class GameEngine {
         craters = generateCraters()
         stars = generateStars()
         asteroids = generateAsteroids()
+        blackHole = generateBlackHole()
     }
 
     fun arenaRadius(): Float = minOf(screenW, screenH) * 0.45f
@@ -316,6 +340,69 @@ class GameEngine {
         }
         path.close()
         return path
+    }
+
+    /**
+     * Placed beyond the moon's top-right at a fixed angle/distance from the castle (so it lands
+     * in the same spot relative to the moon on any device), then clamped to stay on screen for
+     * unusually narrow/wide aspect ratios. The on-screen clamp is applied per-axis, which alone
+     * could pull the point back toward the castle far enough to end up *inside* the opaque moon
+     * disc on some aspect ratios — so afterward, if clamping shortened its distance from the
+     * castle below the moon's edge (plus the glow's own radius), it's pushed back out along the
+     * same direction instead, guaranteeing it never renders behind the moon even if that means
+     * the glow's outer edge goes slightly off-screen.
+     */
+    private fun generateBlackHole(): BlackHole? {
+        if (screenW <= 0f || screenH <= 0f) return null
+        val radius = arenaRadius()
+        // Sized so the disk+glow together comfortably fit the sky band above/right of the moon
+        // on a typical portrait phone without the on-screen clamp needing to fight the
+        // stay-outside-the-moon constraint too hard (see push-out logic below).
+        val eventHorizonRadius = radius * 0.17f
+        val diskRx = eventHorizonRadius * 2.15f
+        val diskRy = eventHorizonRadius * 1.35f
+        val glowRadius = eventHorizonRadius * 2.2f
+
+        val angle = Math.toRadians(-55.0).toFloat() // up and to the right
+        val minDist = radius + glowRadius + 6f * scale
+        var cx = castle.x + minDist * cos(angle)
+        var cy = castle.y + minDist * sin(angle)
+        cx = GameMath.clamp(cx, glowRadius, screenW - glowRadius)
+        cy = GameMath.clamp(cy, glowRadius, screenH - glowRadius)
+        val dx = cx - castle.x
+        val dy = cy - castle.y
+        val dist = hypot(dx, dy)
+        if (dist < minDist && dist > 0f) {
+            val pushOut = minDist / dist
+            cx = castle.x + dx * pushOut
+            cy = castle.y + dy * pushOut
+        }
+
+        // Transparent well inside the event horizon's edge (that part is always hidden anyway),
+        // brightest right where the disk emerges from behind it, cooling from white through
+        // orange to red further out.
+        val innerFrac = eventHorizonRadius / diskRx
+        val diskShader = RadialGradient(
+            0f, 0f, diskRx,
+            intArrayOf(
+                Color.argb(0, 255, 235, 200),
+                Color.argb(0, 255, 235, 200),
+                Color.argb(255, 255, 250, 235),
+                Color.argb(255, 255, 170, 70),
+                Color.argb(220, 200, 70, 30),
+                Color.argb(0, 120, 30, 20)
+            ),
+            floatArrayOf(0f, innerFrac * 0.9f, innerFrac, 0.5f, 0.8f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        val glowShader = RadialGradient(
+            0f, 0f, glowRadius,
+            intArrayOf(Color.argb(70, 255, 200, 140), Color.argb(0, 255, 160, 90)),
+            floatArrayOf(0f, 1f),
+            Shader.TileMode.CLAMP
+        )
+
+        return BlackHole(cx, cy, eventHorizonRadius, diskRx, diskRy, 14f, glowRadius, diskShader, glowShader)
     }
 
     fun update(dt: Float) {
@@ -653,6 +740,48 @@ class GameEngine {
         hud.draw(canvas, this)
     }
 
+    /** See [BlackHole]'s doc for how the disk-behind-a-plain-circle trick produces the look. */
+    private fun drawBlackHole(canvas: Canvas) {
+        val bh = blackHole ?: return
+        val pulse = 0.8f + 0.2f * sin(worldTime * 0.6f)
+
+        canvas.save()
+        canvas.translate(bh.cx, bh.cy)
+
+        // Soft ambient glow, breathing slowly for an epic, larger-than-life presence.
+        paint.shader = bh.glowShader
+        paint.style = Paint.Style.FILL
+        paint.alpha = (255 * pulse).toInt()
+        canvas.drawCircle(0f, 0f, bh.glowRadius, paint)
+
+        // Tilted, slowly-rotating accretion disk, drawn as a full circle in squashed local space
+        // so it renders as an ellipse once unsquashed.
+        canvas.save()
+        canvas.rotate(bh.tiltDeg + worldTime * 4f)
+        canvas.scale(1f, bh.diskRy / bh.diskRx)
+        paint.shader = bh.diskShader
+        paint.alpha = (255 * (0.85f + 0.15f * pulse)).toInt()
+        canvas.drawCircle(0f, 0f, bh.diskRx, paint)
+        canvas.restore()
+
+        // Event horizon: solid black, always a perfect circle regardless of the disk's
+        // rotation/tilt above, drawn on top so it covers the disk's middle and leaves only the
+        // parts poking out past its edge visible — that's what makes the ring wrap around it.
+        paint.shader = null
+        paint.alpha = 255
+        paint.color = Color.rgb(2, 2, 4)
+        canvas.drawCircle(0f, 0f, bh.eventHorizonRadius, paint)
+
+        // Photon ring: a thin bright rim right at the horizon's edge.
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f * scale
+        paint.color = Color.argb((200 * pulse).toInt(), 255, 245, 220)
+        canvas.drawCircle(0f, 0f, bh.eventHorizonRadius, paint)
+        paint.style = Paint.Style.FILL
+
+        canvas.restore()
+    }
+
     private fun drawArenaBackground(canvas: Canvas) {
         // Night sky, drawn first so the starfield and (later) the moon-surface
         // arena disc layer cleanly on top of it every frame.
@@ -666,6 +795,10 @@ class GameEngine {
             paint.color = Color.argb((90 + twinkle * 165).toInt(), 255, 255, 255)
             canvas.drawCircle(s.x, s.y, s.radius, paint)
         }
+
+        // Drawn before the (nearer) asteroids so they can drift across in front of it, keeping
+        // the black hole reading as a genuinely distant background object.
+        drawBlackHole(canvas)
 
         for (a in asteroids) {
             canvas.save()
