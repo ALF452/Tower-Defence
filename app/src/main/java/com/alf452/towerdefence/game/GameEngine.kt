@@ -119,6 +119,14 @@ class GameEngine {
      */
     var onGameOver: ((Int, Int) -> Unit)? = null
 
+    // Sound-effect hooks, fired the instant the corresponding gameplay event happens rather
+    // than owning any audio playback itself — keeps GameEngine free of Android/Context
+    // dependencies, same reasoning as [onGameOver]. Wired to a real player in GameActivity.
+    var onCannonFire: (() -> Unit)? = null
+    var onBowFire: (() -> Unit)? = null
+    var onZombieKilled: (() -> Unit)? = null
+    var onCastleHit: (() -> Unit)? = null
+
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     val hud = Hud()
 
@@ -324,7 +332,15 @@ class GameEngine {
         // and shots already in flight) always keeps running, even after a wave
         // has ended, so nothing freezes mid-animation on the upgrade screen.
         for (z in zombies) {
-            z.update(dt, castle) { dmg -> castle.takeDamage(dmg) }
+            z.update(dt, castle) { dmg ->
+                // Checked before applying damage so the fatal hit still plays (the castle only
+                // becomes "destroyed" after it), but every hit after that from zombies still
+                // parked in ATTACKING state doesn't keep echoing the impact sound forever on
+                // the Game Over screen.
+                val wasAlive = !castle.isDestroyed()
+                castle.takeDamage(dmg)
+                if (wasAlive) onCastleHit?.invoke()
+            }
         }
 
         val projIter = projectiles.iterator()
@@ -349,6 +365,7 @@ class GameEngine {
                 z.rewardClaimed = true
                 killCount++
                 spawnBloodSplatter(z)
+                onZombieKilled?.invoke()
             }
         }
         gold += goldFromKills
@@ -421,6 +438,7 @@ class GameEngine {
                 baseSpeed * scale, scale, effect, effectValue, effectDuration
             )
         )
+        if (kind == ProjectileKind.CANNONBALL) onCannonFire?.invoke() else onBowFire?.invoke()
     }
 
     private fun applyImpact(p: Projectile) {

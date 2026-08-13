@@ -45,6 +45,12 @@ rendering (no game engine, no external art assets — everything is drawn and an
 - `.../ui/Hud.kt` — health/shield bars, gold/wave readout (as independently-sized pill chips so
   digit growth can't make them collide), the upgrade popup and game-over popup (both dim the
   battlefield and show a centered card), and touch hit-testing for all of the above.
+- `.../audio/SoundEngine.kt` — cannon/bow/zombie-death/castle-hit SFX (`SoundPool`) and a looping
+  background track (`MediaPlayer`), wired to `GameEngine` via nullable callback fields
+  (`onCannonFire`, `onZombieKilled`, etc.) so the engine itself stays free of any Android/Context
+  dependency. `app/src/main/res/raw/*.wav` are procedurally synthesized chiptune clips (square/
+  triangle-wave oscillators + noise bursts, generated with a small offline Python script) rather
+  than external audio assets, matching the rest of the game's "everything built in code" approach.
 
 ## Building
 
