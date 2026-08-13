@@ -2,7 +2,6 @@ package com.alf452.towerdefence.game
 
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -16,6 +15,11 @@ enum class WeaponType { CANNON, ARCHER }
  * A single mounted weapon slot on the castle ring. Stats are pushed in from
  * [com.alf452.towerdefence.game.GameEngine] whenever the owning category is upgraded;
  * this class only handles per-frame targeting, firing and its own fire animation.
+ *
+ * Draws use the same pseudo-3D trick as [Castle]: a [TextureFactory] material bitmap fill for
+ * grain (stone for the mount socket, since it's built into the castle wall; metal for the cannon
+ * barrel; wood for the bow), then a cached, now-translucent [RadialGradient]/highlight overlay
+ * pass so the texture still shows through the directional shading.
  */
 class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
     var unlocked = false
@@ -26,18 +30,34 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
     var splashRadius = 0f
     /**
      * Resolution-relative scale so the weapon reads at a consistent size across devices.
-     * Mount/barrel gradients only depend on this value, so they're cached and only rebuilt
-     * when it actually changes (e.g. on a surface resize), instead of every draw() call.
+     * Mount/barrel textures and lighting overlays only depend on this value, so they're cached
+     * and only rebuilt when it actually changes (e.g. on a surface resize), instead of every
+     * draw() call.
      */
     var visualScale = 1f
         set(value) {
             if (field == value) return
             field = value
-            mountGradient = RadialGradient(-3f * value, -3f * value, 16f * value, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
-            barrelGradient = LinearGradient(0f, -8f * value, 0f, 8f * value, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
+            mountShader = TextureFactory.shaderFor(TextureFactory.stone, value)
+            barrelShader = TextureFactory.shaderFor(TextureFactory.metal, value)
+            bowShader = TextureFactory.shaderFor(TextureFactory.wood, value)
+            mountLighting = buildMountLighting(value)
+            barrelLighting = buildBarrelLighting(value)
         }
-    private var mountGradient: Shader = RadialGradient(-3f, -3f, 16f, Color.rgb(122, 114, 100), Color.rgb(74, 68, 58), Shader.TileMode.CLAMP)
-    private var barrelGradient: Shader = LinearGradient(0f, -8f, 0f, 8f, Color.rgb(76, 76, 82), Color.rgb(28, 28, 32), Shader.TileMode.CLAMP)
+    // Initializers call the same builder functions the setter above does (with visualScale's own
+    // just-initialized default), instead of hand-duplicated literals, so the very first frame
+    // drawn can't silently drift from every frame after the first resize.
+    private var mountShader: Shader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
+    private var barrelShader: Shader = TextureFactory.shaderFor(TextureFactory.metal, visualScale)
+    private var bowShader: Shader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
+    private var mountLighting: Shader = buildMountLighting(visualScale)
+    private var barrelLighting: Shader = buildBarrelLighting(visualScale)
+
+    private fun buildMountLighting(scale: Float): Shader =
+        RadialGradient(-3f * scale, -3f * scale, 16f * scale, Color.argb(150, 200, 195, 185), Color.argb(170, 30, 26, 20), Shader.TileMode.CLAMP)
+
+    private fun buildBarrelLighting(scale: Float): Shader =
+        RadialGradient(0f, -6f * scale, 20f * scale, Color.argb(140, 220, 220, 225), Color.argb(180, 5, 5, 8), Shader.TileMode.CLAMP)
     private val turnSpeedRadPerSec = 7f
 
     private var cooldown = 0f
@@ -95,9 +115,12 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
         canvas.translate(px, py)
         canvas.rotate(Math.toDegrees(turretAngle.toDouble()).toFloat())
 
-        // Base mount, radially shaded so it reads as a rounded stone/metal socket.
-        paint.shader = mountGradient
+        // Base mount: stone texture (it's built into the castle wall) plus a translucent radial
+        // highlight/shadow overlay so it still reads as a rounded socket, not a flat disc.
         paint.style = Paint.Style.FILL
+        paint.shader = mountShader
+        canvas.drawCircle(0f, 0f, 14f * s, paint)
+        paint.shader = mountLighting
         canvas.drawCircle(0f, 0f, 14f * s, paint)
         paint.shader = null
         paint.style = Paint.Style.STROKE
@@ -109,14 +132,23 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
             WeaponType.CANNON -> {
                 val recoilOffset = recoil * 6f * s
                 val barrel = RectF(-6f * s - recoilOffset, -8f * s, 24f * s - recoilOffset, 8f * s)
-                paint.shader = barrelGradient
+                paint.shader = barrelShader
                 paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
+                paint.shader = barrelLighting
                 canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
                 paint.shader = null
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 1.2f * s
                 paint.color = Color.rgb(15, 15, 18)
                 canvas.drawRoundRect(barrel, 4f * s, 4f * s, paint)
+
+                // A bright highlight stripe down the barrel's centerline — a top-down cylinder
+                // reads as round when it has a specular streak, without needing real 3D geometry.
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2f * s
+                paint.color = Color.argb(120, 220, 220, 225)
+                canvas.drawLine(barrel.left + 3f * s, 0f, barrel.right - 4f * s, 0f, paint)
 
                 // Muzzle rim.
                 paint.style = Paint.Style.FILL
@@ -141,13 +173,19 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
                 val tipBottomY = 16f * s
                 val bowBulgeX = -16f * s
 
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2f * s
-                paint.color = Color.rgb(214, 200, 176)
                 val bowPath = Path().apply {
                     moveTo(tipTopX, tipTopY)
                     quadTo(bowBulgeX, 0f, tipBottomX, tipBottomY)
                 }
+                // Wood-grain limb (thick textured stroke) with a thin highlight streak down the
+                // same curve for a rounded-wood look, instead of a flat single-color line.
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 4f * s
+                paint.shader = bowShader
+                canvas.drawPath(bowPath, paint)
+                paint.shader = null
+                paint.strokeWidth = 1.3f * s
+                paint.color = Color.argb(150, 255, 235, 200)
                 canvas.drawPath(bowPath, paint)
 
                 // Bowstring, pulled back toward the archer while winding up to fire.

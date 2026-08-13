@@ -191,8 +191,7 @@ class GameEngine {
         castle.x = w / 2f
         castle.y = h / 2f
         scale = GameMath.clamp(w / 1080f, 0.55f, 1.7f)
-        castle.radius = 70f * scale
-        castle.visualScale = scale
+        castle.updateVisualMetrics(70f * scale, scale)
         recomputeCannonStats()
         recomputeArcherStats()
         arenaClipPath.reset()

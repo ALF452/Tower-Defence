@@ -14,8 +14,25 @@ import kotlin.math.sin
 /**
  * The medieval keep the player defends. Shield (from wall upgrades) absorbs
  * damage before health does, and regenerates after a few seconds without a hit.
+ *
+ * Rendering fakes a 3D, textured look within this 2D Canvas engine (no OpenGL/3D pipeline here)
+ * via two combined tricks, applied to every stone surface: a procedurally-generated stone
+ * [TextureFactory] bitmap fill for material grain, then a cached top-lit/bottom-shadowed
+ * [LinearGradient] overlay pass on the same shape for directional lighting, reading as a lit,
+ * extruded volume instead of a flat color. Small repeated elements (wall merlons) get a cheaper
+ * version — texture fill plus a flat highlight/shadow line on their top/bottom edges — since a
+ * per-block repositioned gradient isn't worth the complexity at that size.
  */
 class Castle(var x: Float, var y: Float) {
+
+    companion object {
+        // Turret placement/size, relative to radius — shared between draw()'s drawTurret() calls
+        // and buildTurretLighting() below so the cached gradient's bounds can't drift out of sync
+        // with the shape it's overlaid on.
+        private const val TURRET_OFFSET_FACTOR = 0.85f
+        private const val TURRET_CY_FACTOR = 0.3f
+        private const val TURRET_RADIUS_FACTOR = 0.4f
+    }
 
     var wallLevel = 1
         private set
@@ -32,10 +49,26 @@ class Castle(var x: Float, var y: Float) {
     private var timeSinceLastHit = 999f
     private val shieldRegenDelaySec = 3f
 
-    /** Pixel radius of the keep; set by [GameEngine] from the device's resolution. */
+    /** Pixel radius of the keep, set from the device's resolution. Only changed via [updateVisualMetrics]. */
     var radius = 70f
-    /** Resolution-relative scale used for stroke widths and other small fixed constants. */
+        private set
+
+    /**
+     * Resolution-relative scale used for stroke widths and other small fixed constants. All of
+     * [Castle]'s draw() geometry is position-independent (drawn relative to a canvas.translate(x, y)
+     * at the top of [draw]), so the cached shaders/gradients below only depend on [radius] and
+     * this scale. Only changed via [updateVisualMetrics].
+     */
     var visualScale = 1f
+        private set
+
+    // Initializers call the same builder functions updateVisualMetrics() uses (with the
+    // properties' own just-initialized default values) rather than hand-duplicated literals, so
+    // the very first frame drawn can't silently drift from every frame after the first resize.
+    private var stoneShader: Shader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
+    private var woodShader: Shader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
+    private var keepLighting: Shader = buildKeepLighting(radius)
+    private var turretLighting: Shader = buildTurretLighting(radius)
 
     private var damageFlash = 0f
     private var flagPhase = 0f
@@ -104,6 +137,58 @@ class Castle(var x: Float, var y: Float) {
         isDead = false
     }
 
+    /**
+     * Sets [radius] and [visualScale] together and rebuilds the cached shaders/gradients exactly
+     * once — [GameEngine.onSurfaceSize] always changes both at the same time, so a single combined
+     * setter avoids the wasted double-rebuild two independently-invalidating setters would cause.
+     */
+    fun updateVisualMetrics(newRadius: Float, newScale: Float) {
+        if (newRadius == radius && newScale == visualScale) return
+        radius = newRadius
+        visualScale = newScale
+        stoneShader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
+        woodShader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
+        keepLighting = buildKeepLighting(radius)
+        turretLighting = buildTurretLighting(radius)
+    }
+
+    private fun buildKeepLighting(r: Float): Shader =
+        LinearGradient(0f, -r * 0.55f, 0f, r * 0.95f, Color.argb(75, 255, 255, 245), Color.argb(100, 0, 0, 0), Shader.TileMode.CLAMP)
+
+    private fun buildTurretLighting(r: Float): Shader {
+        val tr = r * TURRET_RADIUS_FACTOR
+        val cy = r * TURRET_CY_FACTOR
+        return LinearGradient(0f, cy - tr * 1.2f, 0f, cy + tr, Color.argb(75, 255, 255, 245), Color.argb(100, 0, 0, 0), Shader.TileMode.CLAMP)
+    }
+
+    /** A flat damage-flash tint, drawn as a final pass over a shape instead of blending it into a cached shader/texture. */
+    private fun damageTint(): Int = Color.argb((damageFlash * 150).toInt(), 255, 55, 45)
+
+    /**
+     * Shared three-pass fill used by every stone surface (keep body, turret bodies, wall/keep
+     * blocks): material texture, then a directional lighting overlay (or none, for the small
+     * blocks that skip it), then an optional flat damage-flash tint — factored out so a future
+     * change to how any of those three passes composite only needs updating in one place. Takes
+     * explicit bounds rather than a RectF so the many-times-per-frame wall/crenellation blocks
+     * don't need to allocate one just to call this. [cornerRadius] of 0 draws a plain rect,
+     * matching Canvas's own drawRoundRect behavior.
+     */
+    private fun drawTexturedSurface(canvas: Canvas, paint: Paint, left: Float, top: Float, right: Float, bottom: Float, cornerRadius: Float, materialShader: Shader, lightingShader: Shader?) {
+        paint.style = Paint.Style.FILL
+        paint.shader = materialShader
+        canvas.drawRoundRect(left, top, right, bottom, cornerRadius, cornerRadius, paint)
+        if (lightingShader != null) {
+            paint.shader = lightingShader
+            canvas.drawRoundRect(left, top, right, bottom, cornerRadius, cornerRadius, paint)
+        }
+        if (damageFlash > 0f) {
+            paint.shader = null
+            paint.color = damageTint()
+            canvas.drawRoundRect(left, top, right, bottom, cornerRadius, cornerRadius, paint)
+        }
+        paint.shader = null
+    }
+
     fun draw(canvas: Canvas, paint: Paint) {
         paint.shader = null
         val sw = 2f * visualScale
@@ -113,49 +198,49 @@ class Castle(var x: Float, var y: Float) {
         paint.color = Color.argb(90, 0, 0, 0)
         canvas.drawOval(x - radius * 1.5f, y + radius * 0.9f, x + radius * 1.5f, y + radius * 1.25f, paint)
 
-        val bodyTop = if (damageFlash > 0f) blend(Color.rgb(200, 188, 166), Color.RED, damageFlash) else Color.rgb(200, 188, 166)
-        val bodyBottom = if (damageFlash > 0f) blend(Color.rgb(150, 138, 118), Color.RED, damageFlash) else Color.rgb(150, 138, 118)
+        canvas.save()
+        canvas.translate(x, y)
 
         // Shield dome, opacity/size reflects remaining shield.
         if (shield > 0f) {
             val shieldRatio = shield / maxShield
             paint.color = Color.argb((70 * shieldRatio).toInt() + 25, 90, 170, 255)
             paint.style = Paint.Style.FILL
-            canvas.drawCircle(x, y, radius * 1.55f, paint)
+            canvas.drawCircle(0f, 0f, radius * 1.55f, paint)
             paint.color = Color.argb(180, 130, 200, 255)
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 3f * visualScale
-            canvas.drawCircle(x, y, radius * 1.55f, paint)
+            canvas.drawCircle(0f, 0f, radius * 1.55f, paint)
         }
 
-        // Curtain wall: a solid ring band with merlon blocks on top, count scales with wall level.
+        // Curtain wall: a textured ring band with merlon blocks on top, count scales with wall level.
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 14f * visualScale
-        paint.color = Color.rgb(126, 118, 102)
-        canvas.drawCircle(x, y, radius * 1.25f, paint)
-        paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(142, 134, 116)
+        paint.shader = stoneShader
+        canvas.drawCircle(0f, 0f, radius * 1.25f, paint)
+        paint.shader = null
+
         val wallSegments = 10 + wallLevel * 2
         val wallOuter = radius * 1.25f
         for (i in 0 until wallSegments) {
             val angle = (2 * Math.PI * i / wallSegments).toFloat()
-            val px = x + wallOuter * cos(angle)
-            val py = y + wallOuter * sin(angle)
-            canvas.drawRect(px - 6f * visualScale, py - 8f * visualScale, px + 6f * visualScale, py + 2f * visualScale, paint)
+            val px = wallOuter * cos(angle)
+            val py = wallOuter * sin(angle)
+            drawBlock(canvas, paint, px - 6f * visualScale, py - 8f * visualScale, px + 6f * visualScale, py + 2f * visualScale)
         }
 
         // Flanking corner turrets with conical roofs.
-        drawTurret(canvas, paint, x - radius * 0.85f, y + radius * 0.3f, radius * 0.4f, bodyTop, bodyBottom, sw)
-        drawTurret(canvas, paint, x + radius * 0.85f, y + radius * 0.3f, radius * 0.4f, bodyTop, bodyBottom, sw)
+        val turretCy = radius * TURRET_CY_FACTOR
+        val turretR = radius * TURRET_RADIUS_FACTOR
+        drawTurret(canvas, paint, -radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
+        drawTurret(canvas, paint, radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
 
-        // Keep body, shaded with a vertical gradient for a stone-block look.
-        val keep = RectF(x - radius * 0.55f, y - radius * 0.55f, x + radius * 0.55f, y + radius * 0.95f)
-        paint.shader = LinearGradient(0f, keep.top, 0f, keep.bottom, bodyTop, bodyBottom, Shader.TileMode.CLAMP)
-        paint.style = Paint.Style.FILL
-        canvas.drawRoundRect(keep, 4f * visualScale, 4f * visualScale, paint)
-        paint.shader = null
+        // Keep body: stone texture, then a top-lit/bottom-shadowed overlay so it reads as a lit
+        // extruded volume rather than a flat rect.
+        val keep = RectF(-radius * 0.55f, -radius * 0.55f, radius * 0.55f, radius * 0.95f)
+        drawTexturedSurface(canvas, paint, keep.left, keep.top, keep.right, keep.bottom, 4f * visualScale, stoneShader, keepLighting)
 
-        // Stone coursing lines for a bit of texture.
+        // Stone coursing lines for a bit of extra texture detail.
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 1f * visualScale
         paint.color = Color.argb(60, 60, 50, 40)
@@ -170,66 +255,95 @@ class Castle(var x: Float, var y: Float) {
         paint.color = Color.rgb(90, 80, 65)
         canvas.drawRoundRect(keep, 4f * visualScale, 4f * visualScale, paint)
 
-        // Crenellations on the keep.
-        paint.style = Paint.Style.FILL
-        paint.color = bodyTop
+        // Crenellations on the keep, textured/beveled like the wall's merlon blocks.
         val teeth = 5
         val toothW = keep.width() / (teeth * 2f)
         for (i in 0 until teeth) {
             val left = keep.left + toothW * (2 * i)
-            canvas.drawRect(left, keep.top - toothW, left + toothW, keep.top, paint)
+            drawBlock(canvas, paint, left, keep.top - toothW, left + toothW, keep.top)
         }
 
-        // Gate.
-        paint.color = Color.rgb(38, 30, 24)
-        val gate = RectF(x - radius * 0.16f, y + radius * 0.35f, x + radius * 0.16f, keep.bottom)
+        // Gate: wood-grain texture with a couple of iron studs for hardware detail.
+        val gate = RectF(-radius * 0.16f, radius * 0.35f, radius * 0.16f, keep.bottom)
+        paint.style = Paint.Style.FILL
+        paint.shader = woodShader
         canvas.drawRoundRect(gate, gate.width() * 0.4f, gate.width() * 0.4f, paint)
+        paint.shader = null
+        paint.color = Color.rgb(40, 38, 36)
+        val studR = 1.4f * visualScale
+        for (sx in floatArrayOf(gate.left + gate.width() * 0.28f, gate.right - gate.width() * 0.28f)) {
+            for (sy in floatArrayOf(gate.top + gate.height() * 0.3f, gate.top + gate.height() * 0.7f)) {
+                canvas.drawCircle(sx, sy, studR, paint)
+                paint.color = Color.argb(140, 200, 195, 190)
+                canvas.drawCircle(sx - studR * 0.3f, sy - studR * 0.3f, studR * 0.35f, paint)
+                paint.color = Color.rgb(40, 38, 36)
+            }
+        }
 
         // Flag.
         paint.color = Color.rgb(200, 188, 166)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f * visualScale
-        canvas.drawLine(x, keep.top - toothW, x, keep.top - toothW - radius * 0.6f, paint)
+        canvas.drawLine(0f, keep.top - toothW, 0f, keep.top - toothW - radius * 0.6f, paint)
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(192, 57, 43)
         val flagWave = sin(flagPhase) * 6f * visualScale
         val flagPath = Path().apply {
-            moveTo(x, keep.top - toothW - radius * 0.6f)
-            lineTo(x + radius * 0.5f + flagWave, keep.top - toothW - radius * 0.48f)
-            lineTo(x, keep.top - toothW - radius * 0.32f)
+            moveTo(0f, keep.top - toothW - radius * 0.6f)
+            lineTo(radius * 0.5f + flagWave, keep.top - toothW - radius * 0.48f)
+            lineTo(0f, keep.top - toothW - radius * 0.32f)
             close()
         }
         canvas.drawPath(flagPath, paint)
+
+        canvas.restore()
+        paint.shader = null
     }
 
-    private fun drawTurret(canvas: Canvas, paint: Paint, cx: Float, cy: Float, r: Float, topColor: Int, bottomColor: Int, sw: Float) {
+    /** A small stone block (wall merlon / keep crenellation), textured with a light top edge and dark bottom edge for a cheap 3D-extruded look. */
+    private fun drawBlock(canvas: Canvas, paint: Paint, left: Float, top: Float, right: Float, bottom: Float) {
+        drawTexturedSurface(canvas, paint, left, top, right, bottom, 0f, stoneShader, null)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1f * visualScale
+        paint.color = Color.argb(150, 225, 215, 195)
+        canvas.drawLine(left, top, right, top, paint)
+        paint.color = Color.argb(120, 40, 34, 26)
+        canvas.drawLine(left, bottom, right, bottom, paint)
+    }
+
+    private fun drawTurret(canvas: Canvas, paint: Paint, cx: Float, cy: Float, r: Float, sw: Float) {
         val body = RectF(cx - r * 0.55f, cy - r * 1.2f, cx + r * 0.55f, cy + r)
-        paint.shader = LinearGradient(0f, body.top, 0f, body.bottom, topColor, bottomColor, Shader.TileMode.CLAMP)
-        paint.style = Paint.Style.FILL
-        canvas.drawRoundRect(body, r * 0.2f, r * 0.2f, paint)
-        paint.shader = null
+        drawTexturedSurface(canvas, paint, body.left, body.top, body.right, body.bottom, r * 0.2f, stoneShader, turretLighting)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw
         paint.color = Color.rgb(90, 80, 65)
         canvas.drawRoundRect(body, r * 0.2f, r * 0.2f, paint)
 
-        // Conical roof.
+        // Conical roof, split into lit/shadow halves for a 3D-cone read without needing a shader.
+        val apexX = cx
+        val apexY = cy - r * 2.1f
+        val baseY = cy - r * 1.2f
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(120, 50, 46)
-        val roof = Path().apply {
-            moveTo(cx - r * 0.7f, cy - r * 1.2f)
-            lineTo(cx + r * 0.7f, cy - r * 1.2f)
-            lineTo(cx, cy - r * 2.1f)
+        val roofLit = Path().apply {
+            moveTo(apexX, apexY)
+            lineTo(cx - r * 0.7f, baseY)
+            lineTo(cx, baseY)
             close()
         }
-        canvas.drawPath(roof, paint)
-    }
-
-    private fun blend(from: Int, to: Int, t: Float): Int {
-        val ft = GameMath.clamp(t, 0f, 1f)
-        val r = (Color.red(from) + (Color.red(to) - Color.red(from)) * ft).toInt()
-        val g = (Color.green(from) + (Color.green(to) - Color.green(from)) * ft).toInt()
-        val b = (Color.blue(from) + (Color.blue(to) - Color.blue(from)) * ft).toInt()
-        return Color.rgb(r, g, b)
+        val roofShadow = Path().apply {
+            moveTo(apexX, apexY)
+            lineTo(cx, baseY)
+            lineTo(cx + r * 0.7f, baseY)
+            close()
+        }
+        paint.color = Color.rgb(150, 64, 58)
+        canvas.drawPath(roofLit, paint)
+        paint.color = Color.rgb(95, 38, 34)
+        canvas.drawPath(roofShadow, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = sw * 0.7f
+        paint.color = Color.rgb(55, 22, 19)
+        canvas.drawPath(roofLit, paint)
+        canvas.drawPath(roofShadow, paint)
     }
 }
