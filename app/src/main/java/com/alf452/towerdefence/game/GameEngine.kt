@@ -51,6 +51,8 @@ private class Asteroid(
  * the circle's edge (top, bottom, and both sides, since [diskRx]/[diskRy] are both larger than
  * [eventHorizonRadius]), it reads as the disk wrapping around the sphere. Geometry and gradients
  * are built once per resize; only rotation and a slow brightness pulse are animated per frame.
+ * [gravityRadius] is how far its pull on passing shooting stars reaches — see
+ * [ShootingStarField.applyGravityWell].
  */
 private class BlackHole(
     val cx: Float, val cy: Float,
@@ -58,6 +60,7 @@ private class BlackHole(
     val diskRx: Float, val diskRy: Float,
     val tiltDeg: Float,
     val glowRadius: Float,
+    val gravityRadius: Float,
     val diskShader: Shader,
     val glowShader: Shader
 )
@@ -362,6 +365,10 @@ class GameEngine {
         val diskRx = eventHorizonRadius * 2.15f
         val diskRy = eventHorizonRadius * 1.35f
         val glowRadius = eventHorizonRadius * 2.2f
+        // Generous enough that a shooting star drifting through the general area has a real
+        // chance to get caught, but well short of the whole screen so it stays a special moment
+        // rather than something that happens to every star.
+        val gravityRadius = eventHorizonRadius * 5f
 
         val angle = Math.toRadians(-55.0).toFloat() // up and to the right
         val minDist = radius + glowRadius + 6f * scale
@@ -402,12 +409,18 @@ class GameEngine {
             Shader.TileMode.CLAMP
         )
 
-        return BlackHole(cx, cy, eventHorizonRadius, diskRx, diskRy, 14f, glowRadius, diskShader, glowShader)
+        return BlackHole(cx, cy, eventHorizonRadius, diskRx, diskRy, 14f, glowRadius, gravityRadius, diskShader, glowShader)
     }
 
     fun update(dt: Float) {
         worldTime += dt
         shootingStars.update(dt, screenW, screenH, scale)
+        // Shooting stars that drift too close get pulled in and swallowed — see
+        // ShootingStarField.applyGravityWell. Strength is scaled like every other size/speed
+        // constant so the pull reads the same relative to the black hole across devices.
+        blackHole?.let { bh ->
+            shootingStars.applyGravityWell(bh.cx, bh.cy, bh.gravityRadius, bh.eventHorizonRadius, 3_500_000f * scale, dt)
+        }
         for (a in asteroids) {
             a.x += a.speed * dt
             if (a.x - a.radius > screenW) a.x = -a.radius

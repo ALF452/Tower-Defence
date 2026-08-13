@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -25,6 +26,11 @@ class ShootingStarField(poolSize: Int) {
         var color = Color.WHITE
         var age = 0f
         var lifespan = 1f
+        // Set once a star crosses a gravity well's event horizon (see [applyGravityWell]); it
+        // freezes in place and blinks for consumeDuration instead of continuing to drift, so
+        // getting swallowed reads as a distinct moment rather than an abrupt cut.
+        var consuming = false
+        var consumeTimer = 0f
     }
 
     private val stars = List(poolSize) { Star() }
@@ -35,6 +41,7 @@ class ShootingStarField(poolSize: Int) {
         Color.rgb(180, 160, 255)  // lavender
     )
     private var nextSpawnIn = 1f
+    private val consumeDuration = 0.18f
 
     /** [scale] is a resolution-relative multiplier applied to spawn speed; pass 1f if none applies. */
     fun update(dt: Float, screenW: Float, screenH: Float, scale: Float) {
@@ -45,12 +52,43 @@ class ShootingStarField(poolSize: Int) {
         }
         for (star in stars) {
             if (!star.active) continue
+            if (star.consuming) {
+                star.consumeTimer += dt
+                if (star.consumeTimer >= consumeDuration) star.active = false
+                continue
+            }
             star.age += dt
             star.x += star.vx * dt
             star.y += star.vy * dt
             if (star.age >= star.lifespan || star.x < -80f || star.x > screenW + 80f || star.y > screenH + 80f) {
                 star.active = false
             }
+        }
+    }
+
+    /**
+     * Pulls any active, not-already-consuming star within [pullRadius] of ([cx],[cy]) toward that
+     * point with an inverse-square-style acceleration (so the closer a star drifts, the harder
+     * and faster it curves in) — a graceful infall rather than a straight-line snap. A star that
+     * crosses [eventHorizonRadius] starts consuming instead of moving any further; see
+     * [Star.consuming]. No-op for callers that never invoke it (e.g. the main menu backdrop,
+     * which has no black hole), so this doesn't change existing behavior there.
+     */
+    fun applyGravityWell(cx: Float, cy: Float, pullRadius: Float, eventHorizonRadius: Float, strength: Float, dt: Float) {
+        for (star in stars) {
+            if (!star.active || star.consuming) continue
+            val dx = cx - star.x
+            val dy = cy - star.y
+            val dist = hypot(dx, dy)
+            if (dist > pullRadius) continue
+            if (dist <= eventHorizonRadius) {
+                star.consuming = true
+                star.consumeTimer = 0f
+                continue
+            }
+            val accel = strength / (dist * dist + 400f)
+            star.vx += (dx / dist) * accel * dt
+            star.vy += (dy / dist) * accel * dt
         }
     }
 
@@ -69,6 +107,11 @@ class ShootingStarField(poolSize: Int) {
         star.color = colors[Random.nextInt(colors.size)]
         star.age = 0f
         star.lifespan = 4f + Random.nextFloat() * 2.5f
+        // Pool entries are reused, so a star that was previously consumed must have that state
+        // cleared here — otherwise update()'s consuming branch would immediately freeze this
+        // freshly-spawned star in place instead of letting it fly.
+        star.consuming = false
+        star.consumeTimer = 0f
         star.active = true
     }
 
@@ -80,6 +123,10 @@ class ShootingStarField(poolSize: Int) {
     }
 
     private fun drawStar(canvas: Canvas, paint: Paint, star: Star, scale: Float) {
+        if (star.consuming) {
+            drawConsuming(canvas, paint, star, scale)
+            return
+        }
         val fadeIn = (star.age / 0.6f).coerceIn(0f, 1f)
         val fadeOut = ((star.lifespan - star.age) / 0.8f).coerceIn(0f, 1f)
         val globalAlpha = minOf(fadeIn, fadeOut)
@@ -107,5 +154,19 @@ class ShootingStarField(poolSize: Int) {
         // Bright sparkle at the head.
         paint.color = Color.argb((globalAlpha * 255).toInt(), 255, 255, 255)
         canvas.drawCircle(star.x, star.y, 2.6f * scale, paint)
+    }
+
+    /**
+     * Frozen at the point it crossed the event horizon, rapidly flickering as it fades out over
+     * [consumeDuration] — reads as the star blinking out of existence rather than a silent cut.
+     */
+    private fun drawConsuming(canvas: Canvas, paint: Paint, star: Star, scale: Float) {
+        val fadeOut = 1f - star.consumeTimer / consumeDuration
+        val blink = 0.5f + 0.5f * sin(star.consumeTimer * 55f)
+        val alpha = (fadeOut * blink * 255).toInt().coerceIn(0, 255)
+        if (alpha <= 2) return
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(alpha, 255, 255, 255)
+        canvas.drawCircle(star.x, star.y, 3.2f * scale, paint)
     }
 }
