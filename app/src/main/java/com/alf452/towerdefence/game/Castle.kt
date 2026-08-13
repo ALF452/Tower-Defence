@@ -74,7 +74,6 @@ class Castle(var x: Float, var y: Float) {
     // properties' own just-initialized default values) rather than hand-duplicated literals, so
     // the very first frame drawn can't silently drift from every frame after the first resize.
     private var stoneShader: Shader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
-    private var woodShader: Shader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
     private var keepLighting: Shader = buildKeepLighting(radius)
     private var turretLighting: Shader = buildTurretLighting(radius)
     private var roofLighting: Shader = buildRoofLighting(radius)
@@ -156,7 +155,6 @@ class Castle(var x: Float, var y: Float) {
         radius = newRadius
         visualScale = newScale
         stoneShader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
-        woodShader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
         keepLighting = buildKeepLighting(radius)
         turretLighting = buildTurretLighting(radius)
         roofLighting = buildRoofLighting(radius)
@@ -215,10 +213,13 @@ class Castle(var x: Float, var y: Float) {
         paint.shader = null
         val sw = 2f * visualScale
 
-        // Ground shadow.
+        // Ground shadow: a soft halo concentric with the castle, not offset to one side — an
+        // offset shadow implies an angled light source off to that side (a side-view/isometric
+        // cue), whereas the game's directly-overhead camera would see a raised structure's shadow
+        // pooling evenly around its own base.
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb(90, 0, 0, 0)
-        canvas.drawOval(x - radius * 1.5f, y + radius * 0.9f, x + radius * 1.5f, y + radius * 1.25f, paint)
+        paint.color = Color.argb(70, 0, 0, 0)
+        canvas.drawCircle(x, y, radius * 1.35f, paint)
 
         canvas.save()
         canvas.translate(x, y)
@@ -251,69 +252,48 @@ class Castle(var x: Float, var y: Float) {
             drawBlock(canvas, paint, px - 6f * visualScale, py - 8f * visualScale, px + 6f * visualScale, py + 2f * visualScale)
         }
 
-        // Flanking corner turrets with conical roofs.
+        // Flanking corner turrets with conical roofs, drawn before the keep — the keep's own
+        // straight vertical edge (below) then paints cleanly over the small sliver where the two
+        // shapes overlap, instead of the turret's round rim breaking the keep's edge line.
         val turretCy = radius * TURRET_CY_FACTOR
         val turretR = radius * TURRET_RADIUS_FACTOR
         drawTurret(canvas, paint, -radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
         drawTurret(canvas, paint, radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
 
-        // Keep body: stone texture, then a radial center-lit overlay so it reads as a raised,
-        // sunlit volume seen from above rather than a flat rect.
+        // Keep roof: stone texture, then a radial center-lit overlay so it reads as a raised,
+        // sunlit volume seen from above rather than a flat rect. No coursing lines or door here —
+        // both are wall-face details that would only be visible from the side, and a door in
+        // particular reads unmistakably as "the building's front," not its roof.
         val keep = RectF(-radius * 0.55f, -radius * 0.55f, radius * 0.55f, radius * 0.95f)
         drawTexturedSurface(canvas, paint, keep.left, keep.top, keep.right, keep.bottom, 4f * visualScale, stoneShader, keepLighting)
-
-        // Stone coursing lines for a bit of extra texture detail.
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1f * visualScale
-        paint.color = Color.argb(60, 60, 50, 40)
-        val courses = 3
-        for (i in 1..courses) {
-            val ly = keep.top + keep.height() * i / (courses + 1f)
-            canvas.drawLine(keep.left, ly, keep.right, ly, paint)
-        }
 
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw
         paint.color = Color.rgb(90, 80, 65)
         canvas.drawRoundRect(keep, 4f * visualScale, 4f * visualScale, paint)
 
-        // Crenellations on the keep, textured/beveled like the wall's merlon blocks.
-        val teeth = 5
-        val toothW = keep.width() / (teeth * 2f)
-        for (i in 0 until teeth) {
-            val left = keep.left + toothW * (2 * i)
-            drawBlock(canvas, paint, left, keep.top - toothW, left + toothW, keep.top)
-        }
+        // Crenellations on the top and bottom edges — merlons on only the top edge would read as
+        // "the top of a wall facing the camera," so the bottom edge gets a matching row too. Left
+        // and right are skipped: that's exactly where the flanking turrets sit, so a wall-top
+        // battlement there would geometrically collide with the turrets' round footprint, and the
+        // turrets' own stone rim already reads as a wall edge on those sides anyway.
+        val toothSpan = keep.width() / 10f
+        drawEdgeTeeth(canvas, paint, keep.left, keep.right, keep.top, -1f, toothSpan, horizontal = true)
+        drawEdgeTeeth(canvas, paint, keep.left, keep.right, keep.bottom, 1f, toothSpan, horizontal = true)
 
-        // Gate: wood-grain texture with a couple of iron studs for hardware detail.
-        val gate = RectF(-radius * 0.16f, radius * 0.35f, radius * 0.16f, keep.bottom)
-        paint.style = Paint.Style.FILL
-        paint.shader = woodShader
-        canvas.drawRoundRect(gate, gate.width() * 0.4f, gate.width() * 0.4f, paint)
-        paint.shader = null
-        paint.color = Color.rgb(40, 38, 36)
-        val studR = 1.4f * visualScale
-        for (sx in floatArrayOf(gate.left + gate.width() * 0.28f, gate.right - gate.width() * 0.28f)) {
-            for (sy in floatArrayOf(gate.top + gate.height() * 0.3f, gate.top + gate.height() * 0.7f)) {
-                canvas.drawCircle(sx, sy, studR, paint)
-                paint.color = Color.argb(140, 200, 195, 190)
-                canvas.drawCircle(sx - studR * 0.3f, sy - studR * 0.3f, studR * 0.35f, paint)
-                paint.color = Color.rgb(40, 38, 36)
-            }
-        }
-
-        // Flag.
+        // Flag, anchored just above the top edge's own merlon row.
+        val flagBaseY = keep.top - toothSpan
         paint.color = Color.rgb(200, 188, 166)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 3f * visualScale
-        canvas.drawLine(0f, keep.top - toothW, 0f, keep.top - toothW - radius * 0.6f, paint)
+        canvas.drawLine(0f, flagBaseY, 0f, flagBaseY - radius * 0.6f, paint)
         paint.style = Paint.Style.FILL
         paint.color = Color.rgb(192, 57, 43)
         val flagWave = sin(flagPhase) * 6f * visualScale
         val flagPath = Path().apply {
-            moveTo(0f, keep.top - toothW - radius * 0.6f)
-            lineTo(radius * 0.5f + flagWave, keep.top - toothW - radius * 0.48f)
-            lineTo(0f, keep.top - toothW - radius * 0.32f)
+            moveTo(0f, flagBaseY - radius * 0.6f)
+            lineTo(radius * 0.5f + flagWave, flagBaseY - radius * 0.48f)
+            lineTo(0f, flagBaseY - radius * 0.32f)
             close()
         }
         canvas.drawPath(flagPath, paint)
@@ -331,6 +311,28 @@ class Castle(var x: Float, var y: Float) {
         canvas.drawLine(left, top, right, top, paint)
         paint.color = Color.argb(120, 40, 34, 26)
         canvas.drawLine(left, bottom, right, bottom, paint)
+    }
+
+    /**
+     * One edge's row of crenellation teeth ([drawBlock]s), each [toothSpan] wide, projecting
+     * outward from the keep rect along [edgeCoord] by [sign] (-1 for the top edge, +1 for bottom,
+     * so each edge's teeth point away from the rect's own interior). [horizontal] distinguishes a
+     * left-right edge (top/bottom, teeth offset in Y) from a top-bottom edge (left/right, teeth
+     * offset in X) — currently only called for the former (see [draw]), but kept general since the
+     * math is identical either way. [toothSpan] is a shared caller-supplied size rather than being
+     * derived from this edge's own axis length, so a future caller adding another non-square edge
+     * gets teeth sized consistently with the rest of the border instead of silently mismatched.
+     */
+    private fun drawEdgeTeeth(canvas: Canvas, paint: Paint, axisStart: Float, axisEnd: Float, edgeCoord: Float, sign: Float, toothSpan: Float, horizontal: Boolean) {
+        val depth = sign * toothSpan
+        val near = minOf(edgeCoord, edgeCoord + depth)
+        val far = maxOf(edgeCoord, edgeCoord + depth)
+        var pos = axisStart
+        while (pos + toothSpan <= axisEnd + 0.01f) {
+            if (horizontal) drawBlock(canvas, paint, pos, near, pos + toothSpan, far)
+            else drawBlock(canvas, paint, near, pos, far, pos + toothSpan)
+            pos += toothSpan * 2f
+        }
     }
 
     /**
