@@ -2,9 +2,9 @@ package com.alf452.towerdefence.game
 
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import kotlin.math.cos
@@ -17,11 +17,15 @@ import kotlin.math.sin
  *
  * Rendering fakes a 3D, textured look within this 2D Canvas engine (no OpenGL/3D pipeline here)
  * via two combined tricks, applied to every stone surface: a procedurally-generated stone
- * [TextureFactory] bitmap fill for material grain, then a cached top-lit/bottom-shadowed
- * [LinearGradient] overlay pass on the same shape for directional lighting, reading as a lit,
- * extruded volume instead of a flat color. Small repeated elements (wall merlons) get a cheaper
- * version — texture fill plus a flat highlight/shadow line on their top/bottom edges — since a
- * per-block repositioned gradient isn't worth the complexity at that size.
+ * [TextureFactory] bitmap fill for material grain, then a cached [RadialGradient] overlay pass —
+ * bright near the center, darker toward the rim — for directional lighting. Since the whole game
+ * is viewed from directly overhead, a radial "sunlit dome" gradient reads as a raised, top-lit
+ * volume seen from above; the top-lit/bottom-shadowed *linear* gradient this used to be reads as
+ * a wall's face lit from the side, which looked like the castle had been tipped on its edge. The
+ * turret roof follows the same logic: a circle (a cone's footprint from directly above), not a
+ * side-view triangle silhouette. Small repeated elements (wall merlons) get a cheaper version —
+ * texture fill plus a flat highlight/shadow line on their top/bottom edges — since a per-block
+ * repositioned gradient isn't worth the complexity at that size.
  */
 class Castle(var x: Float, var y: Float) {
 
@@ -32,6 +36,10 @@ class Castle(var x: Float, var y: Float) {
         private const val TURRET_OFFSET_FACTOR = 0.85f
         private const val TURRET_CY_FACTOR = 0.3f
         private const val TURRET_RADIUS_FACTOR = 0.4f
+        // Roof cap position/size, relative to the turret's own radius — shared between
+        // drawTurret()'s roof circle and buildRoofLighting() for the same reason as above.
+        private const val ROOF_CY_FACTOR = 1.65f
+        private const val ROOF_RADIUS_FACTOR = 0.62f
     }
 
     var wallLevel = 1
@@ -69,6 +77,7 @@ class Castle(var x: Float, var y: Float) {
     private var woodShader: Shader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
     private var keepLighting: Shader = buildKeepLighting(radius)
     private var turretLighting: Shader = buildTurretLighting(radius)
+    private var roofLighting: Shader = buildRoofLighting(radius)
 
     private var damageFlash = 0f
     private var flagPhase = 0f
@@ -150,15 +159,32 @@ class Castle(var x: Float, var y: Float) {
         woodShader = TextureFactory.shaderFor(TextureFactory.wood, visualScale)
         keepLighting = buildKeepLighting(radius)
         turretLighting = buildTurretLighting(radius)
+        roofLighting = buildRoofLighting(radius)
     }
 
-    private fun buildKeepLighting(r: Float): Shader =
-        LinearGradient(0f, -r * 0.55f, 0f, r * 0.95f, Color.argb(75, 255, 255, 245), Color.argb(100, 0, 0, 0), Shader.TileMode.CLAMP)
+    // All three gradients below are radial (bright center, dark rim) rather than top-to-bottom
+    // linear, since the camera looks straight down — see the class doc comment. turretLighting
+    // and roofLighting are centered at local x=0 so the same cached instance is valid for both the
+    // left and right turret, which draw() reaches via its own canvas.translate(cx, 0f) rather than
+    // baking an absolute x-offset into the shader itself.
+    private fun buildKeepLighting(r: Float): Shader {
+        val centerY = 0.2f * r // vertical midpoint of the keep rect (top -0.55r, bottom 0.95r)
+        return RadialGradient(0f, centerY, r * 0.95f, Color.argb(80, 255, 255, 245), Color.argb(95, 0, 0, 0), Shader.TileMode.CLAMP)
+    }
 
     private fun buildTurretLighting(r: Float): Shader {
         val tr = r * TURRET_RADIUS_FACTOR
         val cy = r * TURRET_CY_FACTOR
-        return LinearGradient(0f, cy - tr * 1.2f, 0f, cy + tr, Color.argb(75, 255, 255, 245), Color.argb(100, 0, 0, 0), Shader.TileMode.CLAMP)
+        val centerY = cy - tr * 0.1f // vertical midpoint of the turret body rect
+        return RadialGradient(0f, centerY, tr * 1.3f, Color.argb(80, 255, 255, 245), Color.argb(95, 0, 0, 0), Shader.TileMode.CLAMP)
+    }
+
+    private fun buildRoofLighting(r: Float): Shader {
+        val tr = r * TURRET_RADIUS_FACTOR
+        val cy = r * TURRET_CY_FACTOR
+        val roofCy = cy - tr * ROOF_CY_FACTOR
+        val roofR = tr * ROOF_RADIUS_FACTOR
+        return RadialGradient(0f, roofCy, roofR * 1.1f, Color.argb(130, 255, 220, 190), Color.argb(120, 40, 15, 12), Shader.TileMode.CLAMP)
     }
 
     /** A flat damage-flash tint, drawn as a final pass over a shape instead of blending it into a cached shader/texture. */
@@ -235,8 +261,8 @@ class Castle(var x: Float, var y: Float) {
         drawTurret(canvas, paint, -radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
         drawTurret(canvas, paint, radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
 
-        // Keep body: stone texture, then a top-lit/bottom-shadowed overlay so it reads as a lit
-        // extruded volume rather than a flat rect.
+        // Keep body: stone texture, then a radial center-lit overlay so it reads as a raised,
+        // sunlit volume seen from above rather than a flat rect.
         val keep = RectF(-radius * 0.55f, -radius * 0.55f, radius * 0.55f, radius * 0.95f)
         drawTexturedSurface(canvas, paint, keep.left, keep.top, keep.right, keep.bottom, 4f * visualScale, stoneShader, keepLighting)
 
@@ -311,39 +337,47 @@ class Castle(var x: Float, var y: Float) {
         canvas.drawLine(left, bottom, right, bottom, paint)
     }
 
+    /**
+     * Drawn in its own local space (translated by [cx], not baked into the shape coordinates) so
+     * the cached [turretLighting]/[roofLighting] radial gradients — centered at local x=0 — are
+     * valid for both the left and right turret from one shared instance each, the same trick a
+     * [TextureFactory] shader gets "for free" since a repeating tile looks the same at any offset.
+     */
     private fun drawTurret(canvas: Canvas, paint: Paint, cx: Float, cy: Float, r: Float, sw: Float) {
-        val body = RectF(cx - r * 0.55f, cy - r * 1.2f, cx + r * 0.55f, cy + r)
+        canvas.save()
+        canvas.translate(cx, 0f)
+
+        val body = RectF(-r * 0.55f, cy - r * 1.2f, r * 0.55f, cy + r)
         drawTexturedSurface(canvas, paint, body.left, body.top, body.right, body.bottom, r * 0.2f, stoneShader, turretLighting)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw
         paint.color = Color.rgb(90, 80, 65)
         canvas.drawRoundRect(body, r * 0.2f, r * 0.2f, paint)
 
-        // Conical roof, split into lit/shadow halves for a 3D-cone read without needing a shader.
-        val apexX = cx
-        val apexY = cy - r * 2.1f
-        val baseY = cy - r * 1.2f
+        // Roof cap: a circle — a cone's footprint as seen from directly above, matching the game's
+        // top-down camera — with a radial highlight, instead of a side-view triangle silhouette.
+        // Hand-rolled fill/lighting/tint sequence rather than routed through drawTexturedSurface()
+        // (which only draws rects) — generalizing that helper to arbitrary shapes would mean
+        // passing it a draw-shape lambda, and allocating one of those on every drawBlock() call
+        // (up to ~50/frame for the wall's merlons) would reintroduce the per-frame allocation
+        // churn this file otherwise avoids, just to save duplicating 3 lines here.
+        val roofCy = cy - r * ROOF_CY_FACTOR
+        val roofR = r * ROOF_RADIUS_FACTOR
         paint.style = Paint.Style.FILL
-        val roofLit = Path().apply {
-            moveTo(apexX, apexY)
-            lineTo(cx - r * 0.7f, baseY)
-            lineTo(cx, baseY)
-            close()
+        paint.color = Color.rgb(120, 50, 46)
+        canvas.drawCircle(0f, roofCy, roofR, paint)
+        paint.shader = roofLighting
+        canvas.drawCircle(0f, roofCy, roofR, paint)
+        paint.shader = null
+        if (damageFlash > 0f) {
+            paint.color = damageTint()
+            canvas.drawCircle(0f, roofCy, roofR, paint)
         }
-        val roofShadow = Path().apply {
-            moveTo(apexX, apexY)
-            lineTo(cx, baseY)
-            lineTo(cx + r * 0.7f, baseY)
-            close()
-        }
-        paint.color = Color.rgb(150, 64, 58)
-        canvas.drawPath(roofLit, paint)
-        paint.color = Color.rgb(95, 38, 34)
-        canvas.drawPath(roofShadow, paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw * 0.7f
         paint.color = Color.rgb(55, 22, 19)
-        canvas.drawPath(roofLit, paint)
-        canvas.drawPath(roofShadow, paint)
+        canvas.drawCircle(0f, roofCy, roofR, paint)
+
+        canvas.restore()
     }
 }

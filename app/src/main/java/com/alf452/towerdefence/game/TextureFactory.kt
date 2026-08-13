@@ -23,9 +23,10 @@ import kotlin.random.Random
 object TextureFactory {
     private const val TILE = 40
 
-    // One fixed seed so the speckle/grain layout is stable across runs and devices rather than
-    // regenerating a different (equally valid, but pointlessly non-reproducible) pattern each launch.
-    private val rng = Random(20260813)
+    // Base seed for each buildX() below, offset per texture (+1/+2/+3) so their draw sequences
+    // are independent rather than all replaying the identical Random(TEXTURE_SEED) sequence —
+    // see the comment in buildStone() for why each gets its own Random at all.
+    private const val TEXTURE_SEED = 20260813L
 
     val stone: Bitmap by lazy { buildStone() }
     val wood: Bitmap by lazy { buildWood() }
@@ -46,6 +47,12 @@ object TextureFactory {
     }
 
     private fun buildStone(): Bitmap {
+        // Each texture gets its own fixed-seed Random rather than sharing one instance, so a
+        // texture's grain is stable regardless of which property callers happen to touch first —
+        // a shared instance would make e.g. wood's pattern depend on whether stone was already
+        // accessed (and had already consumed some draws from the shared sequence). Offset by +1
+        // from the other two so their draw sequences aren't identical replays of each other.
+        val rng = Random(TEXTURE_SEED + 1)
         val (bmp, canvas) = newTile()
         val paint = Paint()
         paint.color = Color.rgb(150, 140, 122)
@@ -71,6 +78,7 @@ object TextureFactory {
     }
 
     private fun buildWood(): Bitmap {
+        val rng = Random(TEXTURE_SEED + 2)
         val (bmp, canvas) = newTile()
         val paint = Paint()
         paint.color = Color.rgb(118, 84, 52)
@@ -88,6 +96,7 @@ object TextureFactory {
     }
 
     private fun buildMetal(): Bitmap {
+        val rng = Random(TEXTURE_SEED + 3)
         val (bmp, canvas) = newTile()
         val paint = Paint()
         paint.color = Color.rgb(58, 58, 64)
