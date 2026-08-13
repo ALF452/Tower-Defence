@@ -33,6 +33,12 @@
             android:exported="false"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.TowerDefence" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.TowerDefence" />
     </application>
 
 </manifest>

@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArraySet
  * procedurally synthesized chiptune WAVs — the game has no external art or audio assets,
  * everything is built in code, and audio follows the same rule.
  */
-class SoundEngine(context: Context) {
+class SoundEngine(context: Context, initialVolume: Float = 1f) {
 
     companion object {
         // SoundPool priority: 0 is lowest — when the stream pool is full, the lowest-priority
@@ -30,7 +30,9 @@ class SoundEngine(context: Context) {
         // board), kept as one named constant per sound rather than a literal at each play() call
         // so the music volume in particular — needed in two places below — can't drift out of
         // sync between them.
-        private const val CANNON_VOLUME = 0.35f
+        // Not private: SettingsActivity's volume-preview reuses this so its preview click matches
+        // in-game cannon volume without a duplicated magic number drifting out of sync.
+        const val CANNON_VOLUME = 0.35f
         private const val BOW_VOLUME = 0.315f
         private const val ZOMBIE_DEATH_VOLUME = 0.385f
         private const val CASTLE_HIT_VOLUME = 0.455f
@@ -62,15 +64,39 @@ class SoundEngine(context: Context) {
     private val loadedSoundIds = CopyOnWriteArraySet<Int>()
 
     private var musicSoundId = 0
+    // Written from SoundPool's loader-thread callback below, read from the UI thread by
+    // playMusic()/pauseMusic()/the masterVolume setter — needs @Volatile for the same reason
+    // masterVolume does.
+    @Volatile
     private var musicStreamId = 0
     private var musicRequested = false
+
+    // A player-controlled multiplier (from AppSettings, via SettingsActivity) layered on top of
+    // the per-sound base levels above, independent of the phone's system media volume. Written
+    // from the UI thread (GameActivity.onResume) but read from GameThread inside playIfLoaded(),
+    // so it needs the same @Volatile treatment as GameThread.running elsewhere in this codebase
+    // to guarantee the write is visible across threads. Changing it live-updates the currently
+    // playing music stream; one-shot SFX just pick it up on their next play() call since they're
+    // too short-lived to need a live update.
+    @Volatile
+    var masterVolume: Float = initialVolume.coerceIn(0f, 1f)
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            if (musicStreamId != 0) {
+                val v = currentMusicVolume()
+                soundPool.setVolume(musicStreamId, v, v)
+            }
+        }
+
+    private fun currentMusicVolume(): Float = MUSIC_VOLUME * masterVolume
 
     init {
         soundPool.setOnLoadCompleteListener { _, sampleId, status ->
             if (status != 0) return@setOnLoadCompleteListener
             loadedSoundIds.add(sampleId)
             if (sampleId == musicSoundId && musicRequested && musicStreamId == 0) {
-                musicStreamId = soundPool.play(musicSoundId, MUSIC_VOLUME, MUSIC_VOLUME, MUSIC_PRIORITY, -1, 1f)
+                val v = currentMusicVolume()
+                musicStreamId = soundPool.play(musicSoundId, v, v, MUSIC_PRIORITY, -1, 1f)
             }
         }
     }
@@ -86,7 +112,8 @@ class SoundEngine(context: Context) {
 
     private fun playIfLoaded(soundId: Int, volume: Float) {
         if (soundId in loadedSoundIds) {
-            soundPool.play(soundId, volume, volume, SFX_PRIORITY, 0, 1f)
+            val v = volume * masterVolume
+            soundPool.play(soundId, v, v, SFX_PRIORITY, 0, 1f)
         }
     }
 
@@ -117,7 +144,8 @@ class SoundEngine(context: Context) {
         if (musicStreamId != 0) {
             soundPool.resume(musicStreamId)
         } else if (musicSoundId in loadedSoundIds) {
-            musicStreamId = soundPool.play(musicSoundId, MUSIC_VOLUME, MUSIC_VOLUME, MUSIC_PRIORITY, -1, 1f)
+            val v = currentMusicVolume()
+            musicStreamId = soundPool.play(musicSoundId, v, v, MUSIC_PRIORITY, -1, 1f)
         }
     }
 

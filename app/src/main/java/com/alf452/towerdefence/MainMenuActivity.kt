@@ -22,6 +22,9 @@ class MainMenuActivity : AppCompatActivity() {
         findViewById<Button>(R.id.highScoresButton).setOnClickListener {
             startActivity(Intent(this, HighScoresActivity::class.java))
         }
+        findViewById<Button>(R.id.settingsButton).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
     }
 
     override fun onResume() {

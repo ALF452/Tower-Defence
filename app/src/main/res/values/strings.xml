@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">Lunar Defence</string>
     <string name="stats_teaser">Best wave: %1$d  •  Best kills: %2$d</string>
+    <string name="volume_percent">%1$d%%</string>
 </resources>

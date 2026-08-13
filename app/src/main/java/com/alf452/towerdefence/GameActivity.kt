@@ -12,11 +12,13 @@ class GameActivity : AppCompatActivity() {
 
     private lateinit var gameView: GameView
     private lateinit var soundEngine: SoundEngine
+    private lateinit var settings: AppSettings
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        soundEngine = SoundEngine(this)
+        settings = AppSettings(this)
+        soundEngine = SoundEngine(this, settings.volume)
         gameView = GameView(this)
         val highScores = HighScores(this)
         gameView.engine.onGameOver = { waveReached, kills -> highScores.recordRun(waveReached, kills) }
@@ -30,6 +32,9 @@ class GameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Re-read in case the player changed the volume from the main menu's Settings screen
+        // while this activity was backgrounded (e.g. backed out mid-run, adjusted it, resumed).
+        soundEngine.masterVolume = settings.volume
         soundEngine.playMusic()
     }
 
