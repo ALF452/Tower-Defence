@@ -589,7 +589,11 @@ class GameEngine {
      */
     private fun spawnBloodSplatter(zombie: Zombie) {
         if (bloodSplatters.size >= maxBloodSplatters) bloodSplatters.removeAt(0)
-        val blobCount = if (zombie.isTank) 6 else 3
+        val blobCount = when (zombie.kind) {
+            EnemyKind.TANK -> 6
+            EnemyKind.WORM -> 4
+            EnemyKind.NORMAL -> 3
+        }
         val r = zombie.radius
         val blobX = FloatArray(blobCount)
         val blobY = FloatArray(blobCount)
