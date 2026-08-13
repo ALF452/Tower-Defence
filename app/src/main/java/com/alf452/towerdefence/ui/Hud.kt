@@ -111,11 +111,14 @@ class Hud {
         fillPaint.color = Color.argb(165, 8, 6, 14)
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
-        var buttonHeight = 58f * s
-        var rowGap = 12f * s
-        var headerHeight = 74f * s
-        var dividerGap = 30f * s
-        var finalGap = 20f * s
+        var buttonHeight = 64f * s
+        var rowGap = 14f * s
+        var headerHeight = 80f * s
+        var dividerGap = 32f * s
+        // Deliberately much larger than rowGap so Start Wave reads as visually separated from
+        // the upgrade rows above it instead of just being one more row in the same stack —
+        // otherwise a tap meant for the last upgrade can land on Start Wave instead.
+        var finalGap = 50f * s
 
         // Base 3 rows always show; specializations add a divider label plus 2 more rows
         // (Explosive Rounds, and Slow/Bleed sharing one row) once wave 10 is cleared.
@@ -123,8 +126,8 @@ class Hud {
         if (unlocked) contentHeight += dividerGap + 2 * (buttonHeight + rowGap)
         contentHeight += finalGap + buttonHeight + 16f * s // safety margin
 
-        val cardWidth = w * 0.88f
-        val cardHeight = minOf(h * 0.92f, contentHeight)
+        val cardWidth = w * 0.92f
+        val cardHeight = minOf(h * 0.95f, contentHeight)
 
         // If the available height is too short to fit every row at its natural size (e.g. a
         // resizable/split-screen window that doesn't honor the portrait lock), shrink all the
@@ -153,8 +156,7 @@ class Hud {
         }
         canvas.drawText(title, cardRect.centerX(), cardRect.top + 42f * s, textPaint)
 
-        fillPaint.color = Color.argb(90, 255, 255, 255)
-        canvas.drawRect(cardRect.left + 24f * s, cardRect.top + 56f * s, cardRect.right - 24f * s, cardRect.top + 57f * s, fillPaint)
+        drawDivider(canvas, cardRect, cardRect.top + 56f * s, 90, s)
 
         // Extra horizontal inset (beyond the card's own margin) so each row reads as a
         // narrower, floating bubble instead of a bar stretched edge-to-edge across the card.
@@ -223,11 +225,24 @@ class Hud {
             bleedButtonRect = RectF()
         }
 
+        // A divider centered in the gap, matching the one under the header, makes the separation
+        // from the upgrade rows above read clearly rather than just being empty space. buttonTop
+        // already includes the trailing rowGap from the last upgrade row, so that's subtracted
+        // back out first to find the true start of the (larger) finalGap span.
+        drawDivider(canvas, cardRect, buttonTop - rowGap + finalGap / 2f, 70, s)
+
         buttonTop += finalGap - rowGap
         startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + buttonHeight)
         drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
         textPaint.textSize = 21f * s
         canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
+    }
+
+    /** A thin translucent horizontal rule spanning the card's inner width, used to separate sections. */
+    private fun drawDivider(canvas: Canvas, cardRect: RectF, y: Float, alpha: Int, scale: Float) {
+        fillPaint.style = Paint.Style.FILL
+        fillPaint.color = Color.argb(alpha, 255, 255, 255)
+        canvas.drawRect(cardRect.left + 24f * scale, y, cardRect.right - 24f * scale, y + 1f * scale, fillPaint)
     }
 
     /**

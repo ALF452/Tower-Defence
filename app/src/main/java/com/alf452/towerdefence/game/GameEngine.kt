@@ -384,10 +384,10 @@ class GameEngine {
 
         val waveCleared = waveManager.allSpawned() && zombies.none { it.isAlive() }
         if (waveCleared) {
-            // Capped past wave 6 for the same reason as the per-kill gold value in
-            // WaveManager: keeps the wave-clear bonus from compounding with rising kill
-            // counts into a late-game gold surplus that trivializes every upgrade.
-            val bonus = 19 + minOf(waveManager.waveNumber, 6) * 5
+            // Flat, same reasoning as the per-kill gold value in WaveManager: kill count
+            // growth alone is enough to keep income rising, so this doesn't need its own
+            // wave-scaling on top of that to reach ~1 affordable upgrade per wave.
+            val bonus = 26
             gold += bonus
             lastWaveGoldEarned = bonus
             waveManager.endWave()

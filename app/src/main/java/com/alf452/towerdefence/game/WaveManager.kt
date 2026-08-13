@@ -57,20 +57,25 @@ class WaveManager {
         val spawnX = centerX + arenaRadius * kotlin.math.cos(angle)
         val spawnY = centerY + arenaRadius * kotlin.math.sin(angle)
 
-        val baseHealth = 30f + (waveNumber - 1) * 18f
+        // Health/damage growth per wave was halved (and quartered respectively) from earlier
+        // tuning to match the leaner gold economy below — with income now buying roughly one
+        // upgrade per wave instead of two or three, enemies need to get tougher more gradually
+        // to stay fair over a long run.
+        val baseHealth = 30f + (waveNumber - 1) * 8f
         // Speed keeps climbing every wave (capped only as a defensive backstop far past
         // any realistic run length) instead of plateauing around wave 27 like it used to.
         val baseSpeed = 40f + min(waveNumber * 1.7f, 300f)
-        val baseDamage = 4f + (waveNumber / 3)
-        // Per-kill gold value stops growing past wave 12 (kill *count* keeps growing every
-        // wave regardless), so late-game income no longer scales quadratically with wave
-        // number and outpaces the 1.3x/level upgrade costs the way it used to.
-        val baseGold = 5 + minOf(waveNumber, 12)
+        val baseDamage = 4f + (waveNumber / 4)
+        // Flat per-kill/tank gold: growing kill *count* each wave is what drives income up, not
+        // an additionally-scaling per-kill value, so total gold earned per wave tracks the
+        // (also exponential) upgrade cost curve closely enough to afford ~1 upgrade per clear
+        // instead of 2-3.
+        val baseGold = 2
 
         val health = if (isTank) baseHealth * 5.5f else baseHealth
         val speed = (if (isTank) baseSpeed * 0.58f else baseSpeed) * visualScale
         val damage = if (isTank) baseDamage * 2.6f else baseDamage
-        val goldReward = if (isTank) (baseGold * 7) / 2 else baseGold
+        val goldReward = if (isTank) baseGold * 2 else baseGold
 
         return Zombie(spawnX, spawnY, health, speed, damage, goldReward, visualScale, isTank)
     }
