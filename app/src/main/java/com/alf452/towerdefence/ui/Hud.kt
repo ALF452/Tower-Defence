@@ -140,9 +140,9 @@ class Hud {
             return
         }
 
-        val buttonWidth = 112f * s
-        val buttonHeight = 112f * s
-        val gap = 14f * s
+        val buttonWidth = 140f * s
+        val buttonHeight = 140f * s
+        val gap = 17.5f * s
         val totalWidth = statuses.size * buttonWidth + (statuses.size - 1) * gap
         var left = (w - totalWidth) / 2f
         val top = h - buttonHeight - 24f * s
@@ -165,7 +165,7 @@ class Hud {
             // A smaller, fixed corner radius than drawBubbleBackground's default pill-shaped
             // buttons elsewhere in the HUD -- these are square, so the default (proportional to
             // height) would round them down into a near-circle instead of a rounded square.
-            drawBubbleBackground(canvas, rect, color, cornerRadius = 18f * s)
+            drawBubbleBackground(canvas, rect, color, cornerRadius = 22.5f * s)
 
             // A dark overlay shrinking from the top down as the cooldown finishes, so progress
             // reads at a glance instead of only via the seconds-remaining text below.
@@ -176,17 +176,17 @@ class Hud {
                 canvas.drawRect(rect.left, rect.top, rect.right, rect.top + rect.height() * cooldownFrac, fillPaint)
             }
 
-            textPaint.textSize = 13f * s
+            textPaint.textSize = 16f * s
             textPaint.color = Color.WHITE
-            canvas.drawText(status.label, rect.centerX(), rect.top + 42f * s, textPaint)
+            canvas.drawText(status.label, rect.centerX(), rect.top + 52.5f * s, textPaint)
 
-            textPaint.textSize = 17f * s
+            textPaint.textSize = 21f * s
             val subLabel = when {
                 targeting -> "Tap target"
                 ready -> "Ready"
                 else -> "${ceil(status.cooldownRemaining).toInt()}s"
             }
-            canvas.drawText(subLabel, rect.centerX(), rect.top + 72f * s, textPaint)
+            canvas.drawText(subLabel, rect.centerX(), rect.top + 90f * s, textPaint)
 
             rects[status.ability] = rect
             left += buttonWidth + gap
@@ -205,7 +205,6 @@ class Hud {
         fillPaint.color = Color.argb(165, 8, 6, 14)
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
-        var buttonHeight = 64f * s
         var rowGap = 14f * s
         var headerHeight = 80f * s
         var dividerGap = 32f * s
@@ -214,22 +213,37 @@ class Hud {
         // otherwise a tap meant for the last upgrade can land on Start Wave instead.
         var finalGap = 50f * s
 
-        // Base 3 rows always show; specializations add a divider label plus 2 more rows
-        // (Explosive Rounds, and Slow/Bleed sharing one row) once wave 10 is cleared.
-        var contentHeight = headerHeight + 3 * (buttonHeight + rowGap)
-        if (unlocked) contentHeight += dividerGap + 2 * (buttonHeight + rowGap)
-        contentHeight += finalGap + buttonHeight + 16f * s // safety margin
-
         val cardWidth = w * 0.92f
+        // Extra horizontal inset (beyond the card's own margin) so the grid reads as floating
+        // inside the card instead of stretched edge-to-edge across it.
+        val buttonMargin = 20f * s + cardWidth * 0.05f
+        val buttonWidth = cardWidth - buttonMargin * 2f
+        // Three square tiles per row utilizes the popup's width far better than one thin
+        // full-width bar per upgrade did -- Wall/Cannon/Archer share row 1, and (once unlocked)
+        // Explosive/Slow/Bleed share row 2, so up to 6 upgrades fit in just two square rows.
+        // tileWidth is fixed by the card's width; tileHeight starts equal to it (square) and is
+        // the one dimension the "fit" shrink below is allowed to touch, same as old buttonHeight.
+        val tileWidth = (buttonWidth - 2f * rowGap) / 3f
+        var tileHeight = tileWidth
+
+        // Base row always shows; specializations add a divider label plus a second tile row
+        // (Explosive, Slow, Bleed) once wave 10 is cleared.
+        var contentHeight = headerHeight + tileHeight + rowGap
+        if (unlocked) contentHeight += dividerGap + tileHeight + rowGap
+        contentHeight += finalGap + tileHeight + 16f * s // safety margin
+
         val cardHeight = minOf(h * 0.95f, contentHeight)
 
         // If the available height is too short to fit every row at its natural size (e.g. a
         // resizable/split-screen window that doesn't honor the portrait lock), shrink all the
         // internal spacing proportionally so the Start Wave button always ends up inside the
-        // card instead of being laid out past its clamped bottom edge.
+        // card instead of being laid out past its clamped bottom edge. Only tileHeight shrinks —
+        // tileWidth stays fixed since width was never the constraint — so tiles turn into short
+        // rectangles rather than squares in this fallback case, same trade-off the old fit logic
+        // already made for row height.
         if (contentHeight > cardHeight) {
             val fit = cardHeight / contentHeight
-            buttonHeight *= fit
+            tileHeight *= fit
             rowGap *= fit
             headerHeight *= fit
             dividerGap *= fit
@@ -269,32 +283,27 @@ class Hud {
 
         drawDivider(canvas, cardRect, cardRect.top + 56f * s, 90, s)
 
-        // Extra horizontal inset (beyond the card's own margin) so each row reads as a
-        // narrower, floating bubble instead of a bar stretched edge-to-edge across the card.
-        val buttonMargin = 20f * s + cardRect.width() * 0.05f
         var buttonTop = cardRect.top + headerHeight
-        val buttonWidth = cardRect.width() - buttonMargin * 2f
+        val col0 = cardRect.left + buttonMargin
+        val col1 = col0 + tileWidth + rowGap
+        val col2 = col1 + tileWidth + rowGap
 
-        wallButtonRect = drawUpgradeButton(
-            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
-            "Castle Walls (Lv ${engine.castle.wallLevel})", "Shield/HP up",
+        wallButtonRect = drawUpgradeTile(
+            canvas, col0, buttonTop, tileWidth, tileHeight,
+            "Walls", "Lv ${engine.castle.wallLevel}", "Shield/HP up",
             engine.wallUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + rowGap
-
-        cannonButtonRect = drawUpgradeButton(
-            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
-            "Castle Cannons (Lv ${engine.cannonLevel})", "Damage/rate/range up",
+        cannonButtonRect = drawUpgradeTile(
+            canvas, col1, buttonTop, tileWidth, tileHeight,
+            "Cannons", "Lv ${engine.cannonLevel}", "Dmg/rate/range up",
             engine.cannonUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + rowGap
-
-        archerButtonRect = drawUpgradeButton(
-            canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
-            "Archer Towers (Lv ${engine.archerLevel})", "Unlock/upgrade archers",
+        archerButtonRect = drawUpgradeTile(
+            canvas, col2, buttonTop, tileWidth, tileHeight,
+            "Archers", "Lv ${engine.archerLevel}", "Unlock/upgrade",
             engine.archerUpgradeCost(), engine.gold, s
         )
-        buttonTop += buttonHeight + rowGap
+        buttonTop += tileHeight + rowGap
 
         if (unlocked) {
             textPaint.textAlign = Paint.Align.LEFT
@@ -305,31 +314,28 @@ class Hud {
             textPaint.textAlign = Paint.Align.CENTER
             buttonTop += dividerGap
 
-            explosiveButtonRect = drawUpgradeButton(
-                canvas, cardRect.left + buttonMargin, buttonTop, buttonWidth, buttonHeight,
-                "Explosive Rounds (Lv ${engine.explosiveLevel})", "Cannon blast radius up",
-                engine.explosiveUpgradeCost(), engine.gold, s
-            )
-            buttonTop += buttonHeight + rowGap
-
-            val halfWidth = (buttonWidth - rowGap) / 2f
             val bleedChosen = engine.bleedLevel > 0
             val slowChosen = engine.slowLevel > 0
-            slowButtonRect = drawUpgradeButton(
-                canvas, cardRect.left + buttonMargin, buttonTop, halfWidth, buttonHeight,
-                if (slowChosen) "Slow Arrows (Lv ${engine.slowLevel})" else "Slow Arrows",
+            explosiveButtonRect = drawUpgradeTile(
+                canvas, col0, buttonTop, tileWidth, tileHeight,
+                "Explosive", "Lv ${engine.explosiveLevel}", "Blast radius up",
+                engine.explosiveUpgradeCost(), engine.gold, s
+            )
+            slowButtonRect = drawUpgradeTile(
+                canvas, col1, buttonTop, tileWidth, tileHeight,
+                "Slow", if (slowChosen) "Lv ${engine.slowLevel}" else "Arrows",
                 if (bleedChosen) "Locked" else "Cripples on hit",
                 if (bleedChosen) null else engine.slowUpgradeCost(), engine.gold, s,
                 costLabelOverride = if (bleedChosen) "Locked" else null
             )
-            bleedButtonRect = drawUpgradeButton(
-                canvas, cardRect.left + buttonMargin + halfWidth + rowGap, buttonTop, halfWidth, buttonHeight,
-                if (bleedChosen) "Bleed Arrows (Lv ${engine.bleedLevel})" else "Bleed Arrows",
+            bleedButtonRect = drawUpgradeTile(
+                canvas, col2, buttonTop, tileWidth, tileHeight,
+                "Bleed", if (bleedChosen) "Lv ${engine.bleedLevel}" else "Arrows",
                 if (slowChosen) "Locked" else "Damage over time",
                 if (slowChosen) null else engine.bleedUpgradeCost(), engine.gold, s,
                 costLabelOverride = if (slowChosen) "Locked" else null
             )
-            buttonTop += buttonHeight + rowGap
+            buttonTop += tileHeight + rowGap
         } else {
             explosiveButtonRect = RectF()
             slowButtonRect = RectF()
@@ -337,13 +343,13 @@ class Hud {
         }
 
         // A divider centered in the gap, matching the one under the header, makes the separation
-        // from the upgrade rows above read clearly rather than just being empty space. buttonTop
-        // already includes the trailing rowGap from the last upgrade row, so that's subtracted
-        // back out first to find the true start of the (larger) finalGap span.
+        // from the upgrade tiles above read clearly rather than just being empty space. buttonTop
+        // already includes the trailing rowGap from the last tile row, so that's subtracted back
+        // out first to find the true start of the (larger) finalGap span.
         drawDivider(canvas, cardRect, buttonTop - rowGap + finalGap / 2f, 70, s)
 
         buttonTop += finalGap - rowGap
-        startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + buttonHeight)
+        startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + tileHeight)
         drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
         textPaint.textSize = 21f * s
         canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
@@ -401,33 +407,49 @@ class Hud {
         fillPaint.style = Paint.Style.FILL
     }
 
-    private fun drawUpgradeButton(
-        canvas: Canvas, left: Float, top: Float, width: Float, height: Float,
-        title: String, subtitle: String, cost: Int?, gold: Int, scale: Float,
+    /**
+     * A square (or near-square, when [tileHeight] has been fit-shrunk) upgrade tile — name,
+     * level/flavor line, subtitle, and cost all centered and stacked vertically, as opposed to
+     * the old wide-row layout's left-aligned title/subtitle with cost pinned to the right (which
+     * only worked because rows were much wider than tall). Corner radius is fixed rather than
+     * drawBubbleBackground's default proportional-to-height one, matching the ability bar tiles,
+     * so square/near-square tiles read as rounded squares rather than near-circles.
+     */
+    private fun drawUpgradeTile(
+        canvas: Canvas, left: Float, top: Float, tileWidth: Float, tileHeight: Float,
+        name: String, levelLabel: String, subtitle: String, cost: Int?, gold: Int, scale: Float,
         costLabelOverride: String? = null
     ): RectF {
-        val rect = RectF(left, top, left + width, top + height)
+        val rect = RectF(left, top, left + tileWidth, top + tileHeight)
         val affordable = cost != null && gold >= cost
         val color = when {
             cost == null -> Color.rgb(70, 62, 90)
             affordable -> Color.rgb(58, 92, 140)
             else -> Color.rgb(50, 45, 60)
         }
-        drawBubbleBackground(canvas, rect, color)
+        drawBubbleBackground(canvas, rect, color, cornerRadius = 16f * scale)
 
-        textPaint.textAlign = Paint.Align.LEFT
-        textPaint.textSize = 18f * scale
-        canvas.drawText(title, rect.left + 20f * scale, rect.top + 24f * scale, textPaint)
-        textPaint.textSize = 13f * scale
-        textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(subtitle, rect.left + 20f * scale, rect.top + 44f * scale, textPaint)
+        // Text sizes track the tile's own width (275 is tileWidth's value at scale=1, i.e. the
+        // reference size these constants were tuned against) rather than [scale] directly. Unlike
+        // the ability bar's fixed-size tiles, tileWidth here is a fraction of the actual card
+        // width and can shrink much faster than [scale] does (scale floors at 0.55 while a narrow
+        // split-screen window keeps shrinking tileWidth toward 0) -- sizing off [scale] alone let
+        // subtitle text overflow a tile that had shrunk well past what [scale] implied.
+        val tileScale = tileWidth / 275f
+
+        textPaint.textSize = 16f * tileScale
         textPaint.color = Color.WHITE
+        canvas.drawText(name, rect.centerX(), rect.top + rect.height() * 0.24f, textPaint)
 
-        textPaint.textAlign = Paint.Align.RIGHT
-        textPaint.textSize = 18f * scale
+        textPaint.textSize = 12f * tileScale
+        textPaint.color = Color.argb(210, 255, 255, 255)
+        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.40f, textPaint)
+        canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.58f, textPaint)
+
+        textPaint.textSize = 17f * tileScale
+        textPaint.color = Color.WHITE
         val costLabel = costLabelOverride ?: cost?.let { "${it}g" } ?: "MAX"
-        canvas.drawText(costLabel, rect.right - 20f * scale, rect.top + 34f * scale, textPaint)
-        textPaint.textAlign = Paint.Align.CENTER
+        canvas.drawText(costLabel, rect.centerX(), rect.top + rect.height() * 0.84f, textPaint)
 
         return rect
     }
