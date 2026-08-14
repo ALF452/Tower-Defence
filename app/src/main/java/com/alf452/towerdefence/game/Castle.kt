@@ -169,8 +169,9 @@ class Castle(var x: Float, var y: Float) {
     // the left and right turret, which draw() reaches via its own canvas.translate(cx, cy) rather
     // than baking an absolute offset into the shader itself.
     private fun buildKeepLighting(r: Float): Shader {
-        val centerY = 0.2f * r // vertical midpoint of the keep rect (top -0.55r, bottom 0.95r)
-        return RadialGradient(0f, centerY, r * 0.95f, Color.argb(80, 255, 255, 245), Color.argb(95, 0, 0, 0), Shader.TileMode.CLAMP)
+        // Centered at (0,0) — the keep rect built in draw() is vertically symmetric about the
+        // castle's own center, so its midpoint is the origin.
+        return RadialGradient(0f, 0f, r * 0.95f, Color.argb(80, 255, 255, 245), Color.argb(95, 0, 0, 0), Shader.TileMode.CLAMP)
     }
 
     private fun buildTurretLighting(r: Float): Shader {
@@ -258,8 +259,11 @@ class Castle(var x: Float, var y: Float) {
         // Keep roof: stone texture, then a radial center-lit overlay so it reads as a raised,
         // sunlit volume seen from above rather than a flat rect. No coursing lines or door here —
         // both are wall-face details that would only be visible from the side, and a door in
-        // particular reads unmistakably as "the building's front," not its roof.
-        val keep = RectF(-radius * 0.55f, -radius * 0.55f, radius * 0.55f, radius * 0.95f)
+        // particular reads unmistakably as "the building's front," not its roof. Vertically
+        // symmetric about the origin (top -0.75r, bottom 0.75r) so the keep sits centered within
+        // the surrounding curtain wall — it used to run -0.55r to 0.95r, offset down by 0.2r from
+        // when the gate/flag layout below it needed the extra room; both are gone/relocated now.
+        val keep = RectF(-radius * 0.55f, -radius * 0.75f, radius * 0.55f, radius * 0.75f)
         drawTexturedSurface(canvas, paint, keep.left, keep.top, keep.right, keep.bottom, 4f * visualScale, stoneShader, keepLighting)
 
         paint.style = Paint.Style.STROKE
