@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
@@ -17,13 +18,30 @@ enum class ZombieState { WALKING, ATTACKING, DYING, DEAD }
 enum class EnemyKind { NORMAL, TANK, WORM, BOSS, FLYER, SHIELDED }
 
 /**
+ * Which boss fights a given [EnemyKind.BOSS] instance is — see [WaveManager.bossVariantForWave]
+ * for the cycle order and [Zombie.update]/[Zombie.draw]'s BOSS branches for how each one differs:
+ * - [GALAXY_SNAIL]: a flat, steady crawl with a green fire trail (see [drawSnail]).
+ * - [METEOR_WYRM]: alternates a slow creep with a fast dash on a fixed cycle, so its arrival is
+ *   unpredictable rather than a flat crawl (see [drawMeteorWyrm]) — its `speed` constructor value
+ *   is still the *average* pace across one full cycle, so the headless balance sim (which has no
+ *   notion of the burst timing) stays a valid estimate of total encounter difficulty even though
+ *   the real movement is bursty.
+ * - [OBELISK_WARDEN]: much slower and tankier, but fires a damaging beam at the castle from range
+ *   once close enough — well before it's near enough to explode on contact — so the fight has a
+ *   second, ongoing pressure source instead of being purely "kill it before it arrives."
+ *
+ * All three still share the same fatal-contact-explosion rule (see [update]'s WALKING branch).
+ */
+enum class BossVariant { GALAXY_SNAIL, METEOR_WYRM, OBELISK_WARDEN }
+
+/**
  * A hostile creature shambling (or, for [EnemyKind.WORM], slithering) in from the wave edge
  * toward the castle. [EnemyKind.TANK] (from wave 13 on) is a larger, tougher, slower variant of
  * the same humanoid rig; [EnemyKind.WORM] (from wave 7 on) is a fast burnt-orange space worm with
  * a completely different segmented body and its own brief "digging out of the ground" entrance;
- * [EnemyKind.BOSS] (alone on wave 19, then alone again every 6 waves after) is the giant "Galaxy
- * Snail" — see [drawSnail] — that crawls in solo with a huge health pool and, unlike every other
- * kind, doesn't chip away at the castle on contact: reaching it is an instant, fatal explosion
+ * [EnemyKind.BOSS] (alone on wave 19, then alone again every 6 waves after) is one of three
+ * giant solo bosses — see [BossVariant] — that crawl in with a huge health pool and, unlike every
+ * other kind, don't chip away at the castle on contact: reaching it is an instant, fatal explosion
  * (see the WALKING branch of [update]).
  *
  * [EnemyKind.FLYER] (from wave 10 on) and [EnemyKind.SHIELDED] (from wave 16 on) are this game's
@@ -47,7 +65,8 @@ class Zombie(
     val contactDamage: Float,
     val goldReward: Int,
     private val visualScale: Float = 1f,
-    val kind: EnemyKind = EnemyKind.NORMAL
+    val kind: EnemyKind = EnemyKind.NORMAL,
+    val bossVariant: BossVariant = BossVariant.GALAXY_SNAIL
 ) {
     val isTank: Boolean get() = kind == EnemyKind.TANK
 
@@ -139,12 +158,12 @@ class Zombie(
     // doesn't all bob in lockstep.
     private val bobPhaseOffset = if (kind == EnemyKind.FLYER) Random(System.identityHashCode(this)).nextFloat() * (2f * Math.PI).toFloat() else 0f
 
-    // Boss-only ("Galaxy Snail") state. galaxyPhase drives both the shell's slow spiral rotation
-    // and its stars' twinkle, accumulated locally in update() since Zombie has no access to
-    // GameEngine's shared worldTime. galaxyStars is a fixed set of star positions/phases within
-    // the shell (fraction of shell radius, so it scales with radius/visualScale), generated once
-    // per instance instead of per frame — same allocation-free reasoning as dustOffsets above.
-    // Lazy since only BOSS instances ever draw a shell.
+    // Galaxy Snail-only. galaxyPhase drives both the shell's slow spiral rotation and its stars'
+    // twinkle, accumulated locally in update() since Zombie has no access to GameEngine's shared
+    // worldTime. galaxyStars is a fixed set of star positions/phases within the shell (fraction
+    // of shell radius, so it scales with radius/visualScale), generated once per instance instead
+    // of per frame — same allocation-free reasoning as dustOffsets above. Lazy since only this
+    // variant ever draws a shell.
     private var galaxyPhase = 0f
     private val galaxyStars: List<FloatArray> by lazy(LazyThreadSafetyMode.NONE) {
         val rng = Random(System.identityHashCode(this))
@@ -155,9 +174,33 @@ class Zombie(
         }
     }
 
+    // Meteor Wyrm-only — see BossVariant's doc for the averaging rationale. dashPhase cycles
+    // [0, dashCycleSec); the first dashCreepFraction of the cycle is the slow creep, the rest is
+    // the fast dash. The two multipliers are chosen so their time-weighted average is exactly
+    // 1.0 — dashCreepFraction * dashCreepMultiplier + (1 - dashCreepFraction) * dashBurstMultiplier
+    // == (2/3 * 0.25) + (1/3 * 2.5) == 1.0 — so `speed` really is this boss's average pace, not
+    // just an approximation of it; the balance sim's flat-speed model depends on that being exact.
+    private var dashPhase = 0f
+    private val dashCycleSec = 3f
+    private val dashCreepFraction = 2f / 3f
+    private val dashCreepMultiplier = 0.25f
+    private val dashBurstMultiplier = 2.5f
+
+    // Obelisk Warden-only: fires a slow, damaging beam at the castle once within beamRangeFactor
+    // * castle.radius, on its own cooldown, independent of (and well before) the contact-explosion
+    // stopDistance — see the WALKING branch of update(). beamFired pulses true for one frame per
+    // shot, consumed the same way as trailPulse/exploded below, so GameEngine can spawn a beam
+    // visual exactly once per shot without its own per-zombie firing timer.
+    private var beamCooldown = 0f
+    private val beamIntervalSec = 4f
+    private val beamDamage = 20f
+    private val beamRangeFactor = 3.5f
+    private var beamFired = false
+
     // Boss-only: pulses true for exactly one frame at a time as it creeps toward the castle so
-    // GameEngine can drop a fiery trail decal at its current position, without GameEngine needing
-    // its own per-zombie movement timer. Consumed (and reset) via consumeTrailPulse().
+    // GameEngine can drop a trail decal (colored per [bossVariant]) at its current position,
+    // without GameEngine needing its own per-zombie movement timer. Consumed (and reset) via
+    // consumeTrailPulse().
     private var trailPulse = false
     private var trailTimer = 0f
     private val trailIntervalSec = 0.1f
@@ -177,6 +220,12 @@ class Zombie(
         val e = exploded
         exploded = false
         return e
+    }
+
+    fun consumeBeamFire(): Boolean {
+        val b = beamFired
+        beamFired = false
+        return b
     }
 
     fun applySlow(factor: Float, durationSec: Float) {
@@ -241,7 +290,33 @@ class Zombie(
                             attackCooldown = attackIntervalSec * 0.5f
                         }
                     } else {
-                        val effectiveSpeed = speed * slowFactor
+                        var effectiveSpeed = speed * slowFactor
+                        if (kind == EnemyKind.BOSS) {
+                            when (bossVariant) {
+                                BossVariant.METEOR_WYRM -> {
+                                    dashPhase = (dashPhase + dt) % dashCycleSec
+                                    val creepDurationSec = dashCycleSec * dashCreepFraction
+                                    effectiveSpeed *= if (dashPhase < creepDurationSec) dashCreepMultiplier else dashBurstMultiplier
+                                }
+                                BossVariant.OBELISK_WARDEN -> {
+                                    // Guarded the same way the contact-explosion path already is
+                                    // (see the isDead check in Castle.takeDamage) — without this,
+                                    // a Warden already close enough to be in beam range keeps
+                                    // firing (and GameEngine keeps spawning BeamFlash visuals)
+                                    // every beamIntervalSec forever after the castle has already
+                                    // fallen, since this branch has no other reason to stop.
+                                    if (!castle.isDestroyed() && d <= castle.radius * beamRangeFactor) {
+                                        beamCooldown -= dt
+                                        if (beamCooldown <= 0f) {
+                                            beamCooldown = beamIntervalSec
+                                            onDamageCastle(beamDamage)
+                                            beamFired = true
+                                        }
+                                    }
+                                }
+                                BossVariant.GALAXY_SNAIL -> {}
+                            }
+                        }
                         x += cos(facingAngle) * effectiveSpeed * dt
                         y += sin(facingAngle) * effectiveSpeed * dt
                         walkPhase += dt * (effectiveSpeed / (18f * visualScale))
@@ -312,10 +387,12 @@ class Zombie(
             paint.alpha = 255
         }
 
-        when (kind) {
-            EnemyKind.WORM -> drawWorm(canvas, paint)
-            EnemyKind.BOSS -> drawSnail(canvas, paint)
-            EnemyKind.FLYER -> drawFlyer(canvas, paint)
+        when {
+            kind == EnemyKind.WORM -> drawWorm(canvas, paint)
+            kind == EnemyKind.BOSS && bossVariant == BossVariant.GALAXY_SNAIL -> drawSnail(canvas, paint)
+            kind == EnemyKind.BOSS && bossVariant == BossVariant.METEOR_WYRM -> drawMeteorWyrm(canvas, paint)
+            kind == EnemyKind.BOSS && bossVariant == BossVariant.OBELISK_WARDEN -> drawObeliskWarden(canvas, paint)
+            kind == EnemyKind.FLYER -> drawFlyer(canvas, paint)
             else -> drawHumanoid(canvas, paint)
         }
 
@@ -583,6 +660,106 @@ class Zombie(
         canvas.drawCircle(radius * 0.25f, 0f, radius * 0.16f, paint)
         paint.color = Color.rgb(30, 20, 10)
         canvas.drawCircle(radius * 0.3f, 0f, radius * 0.07f, paint)
+
+        canvas.restore()
+    }
+
+    /**
+     * The Meteor Wyrm: a bigger, rockier cousin of the segmented worm rig (see [drawWorm]),
+     * oriented along [facingAngle] so it visibly tumbles toward the castle. Its tail flares
+     * brighter and longer during the fast "dash" portion of its movement cycle (see [dashPhase]
+     * in [update]) than during the slow creep, giving a visual tell for when it's about to burst
+     * forward.
+     */
+    private fun drawMeteorWyrm(canvas: Canvas, paint: Paint) {
+        val creepDurationSec = dashCycleSec * dashCreepFraction
+        val dashing = dashPhase >= creepDurationSec
+        canvas.save()
+        canvas.rotate(Math.toDegrees(facingAngle.toDouble()).toFloat())
+
+        val segments = 6
+        val bodyLength = radius * 2.1f
+        val headRadius = radius * 0.55f
+        for (i in segments - 1 downTo 0) {
+            val t = i / (segments - 1f)
+            val segX = -t * bodyLength
+            val wiggle = sin(walkPhase * 2f - i * 0.8f) * radius * 0.15f
+            val segRadius = headRadius * (1f - t * 0.5f)
+            paint.style = Paint.Style.FILL
+            paint.color = when {
+                t < 0.2f -> Color.rgb(90, 70, 60)
+                t > 0.75f -> Color.rgb(50, 38, 32)
+                else -> Color.rgb(70, 54, 46)
+            }
+            canvas.drawCircle(segX, wiggle, segRadius, paint)
+            // Glowing magma cracks across each segment, brighter while dashing.
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.5f * visualScale
+            paint.color = if (dashing) Color.argb(220, 255, 140, 40) else Color.argb(150, 220, 90, 30)
+            canvas.drawCircle(segX, wiggle, segRadius * 0.6f, paint)
+        }
+
+        // Fiery tail, longer and brighter while dashing.
+        val tailLen = if (dashing) bodyLength * 0.9f else bodyLength * 0.35f
+        val tailAlpha = if (dashing) 200 else 110
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(tailAlpha, 255, 120, 30)
+        canvas.drawOval(-bodyLength - tailLen, -radius * 0.18f, -bodyLength, radius * 0.18f, paint)
+
+        // Glowing eyes on the lead segment.
+        paint.color = Color.rgb(255, 210, 60)
+        canvas.drawCircle(-headRadius * 0.2f, -headRadius * 0.3f, headRadius * 0.14f, paint)
+        canvas.drawCircle(-headRadius * 0.2f, headRadius * 0.3f, headRadius * 0.14f, paint)
+
+        canvas.restore()
+    }
+
+    /**
+     * The Obelisk Warden: an angular stone monument rather than a creature, its core glowing
+     * brighter as [beamCooldown] counts down toward its next shot (see [update]'s
+     * OBELISK_WARDEN branch) so a nearly-charged beam reads as an imminent threat before it fires.
+     */
+    private fun drawObeliskWarden(canvas: Canvas, paint: Paint) {
+        canvas.save()
+        canvas.rotate(Math.toDegrees(facingAngle.toDouble()).toFloat())
+
+        // Angular stone body: a hexagon with alternating vertex distances for a jagged silhouette.
+        val bodyPath = Path()
+        for (i in 0 until 6) {
+            val a = (Math.PI / 3.0 * i).toFloat()
+            val r = radius * (0.85f + 0.1f * (i % 2))
+            val px = cos(a) * r
+            val py = sin(a) * r
+            if (i == 0) bodyPath.moveTo(px, py) else bodyPath.lineTo(px, py)
+        }
+        bodyPath.close()
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(70, 66, 78)
+        canvas.drawPath(bodyPath, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2f * visualScale
+        paint.color = Color.rgb(30, 28, 36)
+        canvas.drawPath(bodyPath, paint)
+
+        // Crystalline spikes at alternating vertices.
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(180, 150, 200, 255)
+        for (i in 0 until 6 step 2) {
+            val a = (Math.PI / 3.0 * i).toFloat()
+            val baseR = radius * 0.85f
+            canvas.drawCircle(cos(a) * baseR, sin(a) * baseR, radius * 0.12f, paint)
+        }
+
+        // Glowing core, brightening as the next beam shot approaches.
+        val chargeT = 1f - GameMath.clamp(beamCooldown / beamIntervalSec, 0f, 1f)
+        val coreRadius = radius * (0.28f + chargeT * 0.1f)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb((120 + chargeT * 135).toInt(), 140, 210, 255)
+        canvas.drawCircle(0f, 0f, coreRadius, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.5f * visualScale
+        paint.color = Color.rgb(200, 235, 255)
+        canvas.drawCircle(0f, 0f, coreRadius, paint)
 
         canvas.restore()
     }

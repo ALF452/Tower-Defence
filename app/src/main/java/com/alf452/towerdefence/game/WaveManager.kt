@@ -12,9 +12,10 @@ import kotlin.random.Random
  * at once. Tank/Worm are pure numbers/speed variants; Flyer and Shielded are this game's
  * weapon-mix enemies — see [EnemyKind]'s class doc and [Zombie.canBeTargetedBy].
  *
- * Wave 19, and every [BOSS_INTERVAL] waves after it, is a dedicated boss wave: a single Galaxy
- * Snail (see [EnemyKind.BOSS] and [Zombie.drawSnail]) spawns alone instead of the usual horde —
- * every other wave, including the ones between boss waves, still follows the normal formula above.
+ * Wave 19, and every [BOSS_INTERVAL] waves after it, is a dedicated boss wave: a single boss
+ * spawns alone instead of the usual horde, cycling through the three [BossVariant]s in order
+ * (see [bossVariantForWave]) so no two consecutive boss waves repeat the same fight — every other
+ * wave, including the ones between boss waves, still follows the normal formula above.
  */
 class WaveManager {
     companion object {
@@ -24,18 +25,46 @@ class WaveManager {
         const val SHIELDED_START_WAVE = 16
         const val BOSS_START_WAVE = 19
         const val BOSS_INTERVAL = 6
-        // Tuned via a headless Monte Carlo sim of waves 1-30 (1200 trials): its slow, flat crawl
-        // speed gives weapons a fixed ~(arena radius / BOSS_SPEED) window to burn its health pool
-        // down before it reaches the castle. At this multiplier/speed the boss is a genuine,
+        // Tuned via a headless Monte Carlo sim of waves 1-30 (1200 trials): Galaxy Snail's slow,
+        // flat crawl speed gives weapons a fixed ~(arena radius / speed) window to burn its
+        // health pool down before it reaches the castle. At this multiplier/speed it's a genuine,
         // sometimes-fatal fight the first time it appears (wave 19, right as tank/worm are still
         // new and cannon/archer levels are only ~7-8) — roughly a 1-in-40 chance of dying right
-        // there — but by its later appearances (wave 25 on) player power has scaled enough that it
-        // stops being the binding threat; overall win rate lands at 69.0%, matching this game's
-        // ~70%-by-wave-30 target almost exactly, without shifting where the run's other losses
-        // cluster (still waves 28-30, same as with the boss disabled entirely).
-        const val BOSS_HEALTH_MULT = 35f
-        const val BOSS_SPEED = 12f
+        // there — but by later appearances player power has scaled enough that it stops being the
+        // binding threat.
+        const val GALAXY_SNAIL_HEALTH_MULT = 35f
+        const val GALAXY_SNAIL_SPEED = 12f
+        // Meteor Wyrm's speed is the *average* pace across its dash/creep cycle (see
+        // BossVariant's doc) — its health sits below Galaxy Snail's since the threat here is
+        // unpredictability, not raw DPS-race toughness.
+        const val METEOR_WYRM_HEALTH_MULT = 24f
+        const val METEOR_WYRM_SPEED = 12f
+        // Obelisk Warden trades speed for both toughness and its ranged beam (see
+        // Zombie.beamDamage/beamIntervalSec) — its slower crawl gives the beam more total shots
+        // before it would otherwise reach contact range, so its health multiplier alone doesn't
+        // tell the whole difficulty story the way it does for the other two variants.
+        const val OBELISK_WARDEN_HEALTH_MULT = 40f
+        const val OBELISK_WARDEN_SPEED = 8f
         const val BOSS_GOLD = 150
+        // Verified via a headless Monte Carlo sim of waves 1-30 (1200 trials, covering the
+        // Galaxy Snail and Meteor Wyrm boss waves — Obelisk Warden's first appearance at wave 31
+        // falls just past this game's tested range, but a deterministic cheapest-first run out
+        // to wave 37 confirmed it doesn't introduce a new failure point beyond the base curve's
+        // existing wave-27-30 cliff): 72.4% win rate, right on this game's ~70%-by-wave-30
+        // target — these three variants' first-pass numbers didn't need further tuning the way
+        // Shielded's did in the previous round.
+    }
+
+    /**
+     * Cycles through [BossVariant.entries] in order, one per boss wave — wave 19 is
+     * [BossVariant.GALAXY_SNAIL], wave 25 [BossVariant.METEOR_WYRM], wave 31
+     * [BossVariant.OBELISK_WARDEN], wave 37 back to [BossVariant.GALAXY_SNAIL], and so on. Only
+     * meaningful when [isBossWave] is true for [wave].
+     */
+    fun bossVariantForWave(wave: Int): BossVariant {
+        val bossIndex = (wave - BOSS_START_WAVE) / BOSS_INTERVAL
+        val variants = BossVariant.entries
+        return variants[bossIndex % variants.size]
     }
 
     var waveNumber = 1
@@ -134,23 +163,35 @@ class WaveManager {
         // needed to rise to keep pace with roughly one affordable upgrade per wave.
         val baseGold = 3
 
+        val bossVariant = if (kind == EnemyKind.BOSS) bossVariantForWave(waveNumber) else BossVariant.GALAXY_SNAIL
+        val bossHealthMult = when (bossVariant) {
+            BossVariant.GALAXY_SNAIL -> GALAXY_SNAIL_HEALTH_MULT
+            BossVariant.METEOR_WYRM -> METEOR_WYRM_HEALTH_MULT
+            BossVariant.OBELISK_WARDEN -> OBELISK_WARDEN_HEALTH_MULT
+        }
+        val bossSpeed = when (bossVariant) {
+            BossVariant.GALAXY_SNAIL -> GALAXY_SNAIL_SPEED
+            BossVariant.METEOR_WYRM -> METEOR_WYRM_SPEED
+            BossVariant.OBELISK_WARDEN -> OBELISK_WARDEN_SPEED
+        }
+
         // Worms trade health for speed: individually fragile (so a couple of hits drop one) but
         // fast enough that letting one go unanswered for even a second or two costs real castle
-        // health, unlike a tank's slow, telegraphed approach. The boss is the opposite of a
-        // worm — see BOSS_HEALTH_MULT/BOSS_SPEED below — a huge health pool crawling in at a
-        // flat, wave-independent creep, giving the player a fixed window (arena radius / speed)
-        // to burn it down with weapon DPS before it reaches the castle. Flyer is fragile (a
-        // couple of arrow hits drops one) once an archer can actually reach it — the weapon-mix
-        // pressure it applies is about targeting, not raw toughness. Shielded is the opposite:
-        // its 2.87x multiplier (headless Monte Carlo sim, 1200 trials, landing at 73.7% by wave
-        // 30) is deliberately steep — a first pass at ~2.2x (matching Flyer's inverse) barely
-        // dented the win rate at all (93%+), because a cheapest-first player's cannon/archer
-        // spend is already roughly balanced, so cutting cannons off from half the fight only
-        // matters if what's left standing there is genuinely tanky.
+        // health, unlike a tank's slow, telegraphed approach. Every boss variant is the opposite
+        // of a worm — a huge health pool crawling in at a flat, wave-independent creep (see
+        // bossHealthMult/bossSpeed above) — giving the player a fixed window to burn it down with
+        // weapon DPS before it reaches the castle. Flyer is fragile (a couple of arrow hits drops
+        // one) once an archer can actually reach it — the weapon-mix pressure it applies is about
+        // targeting, not raw toughness. Shielded is the opposite: its 2.87x multiplier (headless
+        // Monte Carlo sim, 1200 trials, landing at 73.7% by wave 30) is deliberately steep — a
+        // first pass at ~2.2x (matching Flyer's inverse) barely dented the win rate at all (93%+),
+        // because a cheapest-first player's cannon/archer spend is already roughly balanced, so
+        // cutting cannons off from half the fight only matters if what's left standing there is
+        // genuinely tanky.
         val health = when (kind) {
             EnemyKind.TANK -> baseHealth * 5.5f
             EnemyKind.WORM -> baseHealth * 0.65f
-            EnemyKind.BOSS -> baseHealth * BOSS_HEALTH_MULT
+            EnemyKind.BOSS -> baseHealth * bossHealthMult
             EnemyKind.FLYER -> baseHealth * 0.8f
             EnemyKind.SHIELDED -> baseHealth * 2.87f
             EnemyKind.NORMAL -> baseHealth
@@ -158,7 +199,7 @@ class WaveManager {
         val speed = (when (kind) {
             EnemyKind.TANK -> baseSpeed * 0.58f
             EnemyKind.WORM -> baseSpeed * 2f
-            EnemyKind.BOSS -> BOSS_SPEED
+            EnemyKind.BOSS -> bossSpeed
             EnemyKind.FLYER -> baseSpeed * 1.5f
             EnemyKind.SHIELDED -> baseSpeed * 0.75f
             EnemyKind.NORMAL -> baseSpeed
@@ -166,6 +207,8 @@ class WaveManager {
         // The boss's contactDamage is never applied through the normal repeated-tick path (see
         // Zombie.update's BOSS branch) — reaching the castle is a single fatal explosion instead,
         // so this value just needs to comfortably exceed any possible remaining health+shield.
+        // (Obelisk Warden also deals damage via its own separate ranged beam, entirely inside
+        // Zombie.update — see beamDamage there, not this value.)
         val damage = when (kind) {
             EnemyKind.TANK -> baseDamage * 2.6f
             EnemyKind.WORM -> baseDamage * 1.6f
@@ -183,7 +226,7 @@ class WaveManager {
             EnemyKind.NORMAL -> baseGold
         }
 
-        return Zombie(spawnX, spawnY, health, speed, damage, goldReward, visualScale, kind)
+        return Zombie(spawnX, spawnY, health, speed, damage, goldReward, visualScale, kind, bossVariant)
     }
 
     fun allSpawned(): Boolean = spawnQueue.isEmpty()

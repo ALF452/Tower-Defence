@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import com.alf452.towerdefence.game.Ability
+import com.alf452.towerdefence.game.BossVariant
 import com.alf452.towerdefence.game.GameEngine
 import com.alf452.towerdefence.game.GameMath
 import com.alf452.towerdefence.game.GameState
@@ -257,7 +258,8 @@ class Hud {
             val prevSize = textPaint.textSize
             textPaint.color = Color.rgb(255, 90, 70)
             textPaint.textSize = 13f * s
-            canvas.drawText("⚠ BOSS WAVE — Galaxy Snail incoming", cardRect.centerX(), cardRect.top + headerHeight * 0.85f, textPaint)
+            val bossName = bossVariantLabel(engine.waveManager.bossVariantForWave(engine.waveManager.waveNumber))
+            canvas.drawText("⚠ BOSS WAVE — $bossName incoming", cardRect.centerX(), cardRect.top + headerHeight * 0.85f, textPaint)
             textPaint.color = prevColor
             textPaint.textSize = prevSize
         }
@@ -342,6 +344,13 @@ class Hud {
         drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
         textPaint.textSize = 21f * s
         canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
+    }
+
+    /** Display name for the upcoming boss wave's warning banner — see [GameEngine.abilityStatuses] for the equivalent ability-label pattern. */
+    private fun bossVariantLabel(variant: BossVariant): String = when (variant) {
+        BossVariant.GALAXY_SNAIL -> "Galaxy Snail"
+        BossVariant.METEOR_WYRM -> "Meteor Wyrm"
+        BossVariant.OBELISK_WARDEN -> "Obelisk Warden"
     }
 
     /** A thin translucent horizontal rule spanning the card's inner width, used to separate sections. */

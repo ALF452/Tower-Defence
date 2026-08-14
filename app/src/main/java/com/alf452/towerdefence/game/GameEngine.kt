@@ -52,12 +52,14 @@ private class Star(val x: Float, val y: Float, val radius: Float, val phase: Flo
 private class BloodSplatter(val x: Float, val y: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
 
 /**
- * One puff of the boss's green fire trail, dropped periodically behind it as it creeps toward
- * the castle (see [Zombie.consumeTrailPulse]). Unlike [BloodSplatter], which is permanent until
- * the next wave wipes it, these fade out on their own after [snailFlameTtlSec] — a lingering
- * trail of "still burning" ground, not a permanent stain.
+ * One puff of a boss's movement trail, dropped periodically behind it as it creeps toward
+ * the castle (see [Zombie.consumeTrailPulse]) and colored by [variant] — green fire for the
+ * Galaxy Snail, orange sparks for the Meteor Wyrm, grey dust for the Obelisk Warden (see the
+ * draw loop in [GameEngine.draw]). Unlike [BloodSplatter], which is permanent until the next
+ * wave wipes it, these fade out on their own after [snailFlameTtlSec] — a lingering trail of
+ * "still active" ground, not a permanent stain.
  */
-private class SnailFlame(val x: Float, val y: Float, var age: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
+private class SnailFlame(val x: Float, val y: Float, var age: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray, val variant: BossVariant)
 
 /**
  * The Orbital Strike ability's impact visual at the player-chosen target point: a fast bright
@@ -113,6 +115,22 @@ private class EmpPulse(val cx: Float, val cy: Float, val maxRadius: Float, priva
         paint.strokeWidth = 5f * visualScale
         paint.color = Color.argb(((1f - t) * 200).toInt(), 90, 190, 255)
         canvas.drawCircle(cx, cy, maxRadius * t, paint)
+    }
+}
+
+/**
+ * The Obelisk Warden's beam shot: a fading straight line from where it fired to the castle,
+ * fired the instant [Zombie.consumeBeamFire] pulses true — both endpoints are fixed at cast time
+ * since a beam is instantaneous, not something that travels over its lifetime like a projectile.
+ */
+private class BeamFlash(val fromX: Float, val fromY: Float, val toX: Float, val toY: Float, private val visualScale: Float) : TimedEffect(0.3f) {
+    fun draw(canvas: Canvas, paint: Paint) {
+        val t = GameMath.clamp(age / ttl, 0f, 1f)
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = (5f - 3f * t) * visualScale
+        paint.color = Color.argb(((1f - t) * 220).toInt(), 150, 210, 255)
+        canvas.drawLine(fromX, fromY, toX, toY, paint)
     }
 }
 
@@ -177,11 +195,15 @@ class GameEngine {
     private val bloodSplatters = mutableListOf<BloodSplatter>()
     private val maxBloodSplatters = 160
 
-    // The boss's green fire trail: self-expiring (see snailFlameTtlSec), also hard-capped since
-    // it's dropped continuously (every ~0.1s of boss movement) rather than once per kill.
+    // The current boss's movement trail (see SnailFlame's doc for the per-variant coloring):
+    // self-expiring (see snailFlameTtlSec), also hard-capped since it's dropped continuously
+    // (every ~0.1s of boss movement) rather than once per kill.
     private val snailFlames = mutableListOf<SnailFlame>()
     private val maxSnailFlames = 220
     private val snailFlameTtlSec = 0.8f
+
+    // The Obelisk Warden's ranged beam shots — one short-lived BeamFlash per shot fired.
+    private val beamFlashes = mutableListOf<BeamFlash>()
 
     // Active player abilities. Each unlocks on its own wave (staggered like the enemy-kind
     // debuts in WaveManager, so the player isn't handed all three at once) and is gated purely
@@ -568,13 +590,21 @@ class GameEngine {
                 if (wasAlive) onCastleHit?.invoke()
             }
             if (z.kind == EnemyKind.BOSS) {
-                if (z.consumeTrailPulse()) spawnSnailTrail(z.x, z.y)
+                if (z.consumeTrailPulse()) spawnSnailTrail(z.x, z.y, z.bossVariant)
                 if (z.consumeExplosion()) explosions.add(Explosion(z.x, z.y, z.radius * 1.8f, scale))
+                // No dedicated SFX hook here — the beam's damage already routes through the
+                // onDamageCastle callback above, which fires onCastleHit like every other source
+                // of castle damage; this just adds the visual.
+                if (z.consumeBeamFire()) {
+                    beamFlashes.add(BeamFlash(z.x, z.y, castle.x, castle.y, scale))
+                }
             }
         }
 
         for (f in snailFlames) f.age += dt
         snailFlames.removeAll { it.age >= snailFlameTtlSec }
+        for (b in beamFlashes) b.update(dt)
+        beamFlashes.removeAll { !it.alive }
 
         // Ability cooldowns tick down regardless of state (see the class doc above their fields)
         // so they keep recharging through the upgrade screen between waves. overchargeTimer is
@@ -740,10 +770,11 @@ class GameEngine {
         if (state != GameState.INTERMISSION) return
         waveManager.startWave(waveManager.waveNumber)
         state = GameState.PLAYING
-        // Wipe the last wave's blood splatters (and any leftover boss fire trail) so decals
-        // never grow unbounded across waves.
+        // Wipe the last wave's blood splatters (and any leftover boss trail/beam flashes) so
+        // decals never grow unbounded across waves.
         bloodSplatters.clear()
         snailFlames.clear()
+        beamFlashes.clear()
     }
 
     /**
@@ -786,14 +817,15 @@ class GameEngine {
     }
 
     /**
-     * Drops one puff of the boss's green fire trail at [x],[y] — called once per
-     * [Zombie.consumeTrailPulse] pulse, i.e. roughly every 0.1s of boss movement, so the trail
-     * reads as continuous rather than a string of separate dots.
+     * Drops one puff of the current boss's movement trail at [x],[y], colored by [variant] — see
+     * [SnailFlame]'s doc — called once per [Zombie.consumeTrailPulse] pulse, i.e. roughly every
+     * 0.1s of boss movement, so the trail reads as continuous rather than a string of separate
+     * dots.
      */
-    private fun spawnSnailTrail(x: Float, y: Float) {
+    private fun spawnSnailTrail(x: Float, y: Float, variant: BossVariant) {
         if (snailFlames.size >= maxSnailFlames) snailFlames.removeAt(0)
         val (blobX, blobY, blobRadius) = scatterBlobs(3, 20f * scale, distFactor = 0.6f, radiusMin = 0.35f, radiusSpread = 0.35f)
-        snailFlames.add(SnailFlame(x, y, 0f, blobX, blobY, blobRadius))
+        snailFlames.add(SnailFlame(x, y, 0f, blobX, blobY, blobRadius, variant))
     }
 
     fun restart() {
@@ -802,6 +834,7 @@ class GameEngine {
         explosions.clear()
         bloodSplatters.clear()
         snailFlames.clear()
+        beamFlashes.clear()
         orbitalStrikes.clear()
         empPulses.clear()
         orbitalStrikeCooldown = 0f
@@ -1002,18 +1035,25 @@ class GameEngine {
             }
         }
 
-        // Boss fire trail: fades from a bright yellow-green flame core out to transparent as it
-        // burns out (see snailFlameTtlSec), instead of the flat/permanent blood-splatter tint.
+        // Boss movement trail, colored by variant (see SnailFlame's doc): fades from a bright
+        // core out to transparent as it burns out (see snailFlameTtlSec), instead of the
+        // flat/permanent blood-splatter tint.
         paint.style = Paint.Style.FILL
         for (f in snailFlames) {
             val t = GameMath.clamp(f.age / snailFlameTtlSec, 0f, 1f)
             val alpha = ((1f - t) * 210).toInt()
             val shrink = 1f - t * 0.4f
             for (i in f.blobX.indices) {
-                paint.color = Color.argb(alpha, (60 + t * 130).toInt(), 230, (50 - t * 30).toInt().coerceAtLeast(10))
+                paint.color = when (f.variant) {
+                    BossVariant.GALAXY_SNAIL -> Color.argb(alpha, (60 + t * 130).toInt(), 230, (50 - t * 30).toInt().coerceAtLeast(10))
+                    BossVariant.METEOR_WYRM -> Color.argb(alpha, 255, (150 + t * 60).toInt().coerceAtMost(255), (40 - t * 30).toInt().coerceAtLeast(5))
+                    BossVariant.OBELISK_WARDEN -> Color.argb(alpha, (140 - t * 50).toInt().coerceAtLeast(60), (125 - t * 45).toInt().coerceAtLeast(55), (110 - t * 40).toInt().coerceAtLeast(45))
+                }
                 canvas.drawCircle(f.x + f.blobX[i], f.y + f.blobY[i], f.blobRadius[i] * shrink, paint)
             }
         }
+
+        for (b in beamFlashes) b.draw(canvas, paint)
 
         for (z in zombies) z.draw(canvas, paint)
         for (p in projectiles) p.draw(canvas, paint)
