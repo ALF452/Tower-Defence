@@ -211,9 +211,9 @@ class GameEngine {
     // to be a moment-to-moment combat decision rather than another economy sink. Cooldowns tick
     // down in every state (including INTERMISSION), not just PLAYING, so an ability used near the
     // end of one wave has a head start recharging for the next rather than being paused.
-    private val orbitalStrikeUnlockWave = 1
-    private val empFreezeUnlockWave = 5
-    private val overchargeUnlockWave = 8
+    private val orbitalStrikeUnlockWave = 5
+    private val empFreezeUnlockWave = 10
+    private val overchargeUnlockWave = 15
     private val orbitalStrikeCooldownSec = 20f
     private val empFreezeCooldownSec = 25f
     private val overchargeCooldownSec = 30f

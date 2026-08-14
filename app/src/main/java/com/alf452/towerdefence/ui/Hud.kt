@@ -140,9 +140,9 @@ class Hud {
             return
         }
 
-        val buttonWidth = 104f * s
-        val buttonHeight = 58f * s
-        val gap = 12f * s
+        val buttonWidth = 112f * s
+        val buttonHeight = 112f * s
+        val gap = 14f * s
         val totalWidth = statuses.size * buttonWidth + (statuses.size - 1) * gap
         var left = (w - totalWidth) / 2f
         val top = h - buttonHeight - 24f * s
@@ -162,7 +162,10 @@ class Hud {
                 ready -> baseColor
                 else -> Color.rgb(50, 48, 58)
             }
-            drawBubbleBackground(canvas, rect, color)
+            // A smaller, fixed corner radius than drawBubbleBackground's default pill-shaped
+            // buttons elsewhere in the HUD -- these are square, so the default (proportional to
+            // height) would round them down into a near-circle instead of a rounded square.
+            drawBubbleBackground(canvas, rect, color, cornerRadius = 18f * s)
 
             // A dark overlay shrinking from the top down as the cooldown finishes, so progress
             // reads at a glance instead of only via the seconds-remaining text below.
@@ -173,17 +176,17 @@ class Hud {
                 canvas.drawRect(rect.left, rect.top, rect.right, rect.top + rect.height() * cooldownFrac, fillPaint)
             }
 
-            textPaint.textSize = 12f * s
+            textPaint.textSize = 13f * s
             textPaint.color = Color.WHITE
-            canvas.drawText(status.label, rect.centerX(), rect.top + 21f * s, textPaint)
+            canvas.drawText(status.label, rect.centerX(), rect.top + 42f * s, textPaint)
 
-            textPaint.textSize = 15f * s
+            textPaint.textSize = 17f * s
             val subLabel = when {
                 targeting -> "Tap target"
                 ready -> "Ready"
                 else -> "${ceil(status.cooldownRemaining).toInt()}s"
             }
-            canvas.drawText(subLabel, rect.centerX(), rect.top + 42f * s, textPaint)
+            canvas.drawText(subLabel, rect.centerX(), rect.top + 72f * s, textPaint)
 
             rects[status.ability] = rect
             left += buttonWidth + gap
@@ -365,8 +368,8 @@ class Hud {
      * height) plus a translucent glossy highlight band near the top, matching the main menu's
      * button look. Shared by the upgrade rows, Start Wave, and Rebuild buttons.
      */
-    private fun drawBubbleBackground(canvas: Canvas, rect: RectF, color: Int) {
-        val radius = rect.height() * 0.42f
+    private fun drawBubbleBackground(canvas: Canvas, rect: RectF, color: Int, cornerRadius: Float = rect.height() * 0.42f) {
+        val radius = cornerRadius
         fillPaint.style = Paint.Style.FILL
         fillPaint.color = color
         canvas.drawRoundRect(rect, radius, radius, fillPaint)
