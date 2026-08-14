@@ -11,19 +11,23 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.random.Random
 
 enum class ZombieState { WALKING, ATTACKING, DYING, DEAD }
-enum class EnemyKind { NORMAL, TANK, WORM }
+enum class EnemyKind { NORMAL, TANK, WORM, BOSS }
 
 /**
  * A hostile creature shambling (or, for [EnemyKind.WORM], slithering) in from the wave edge
- * toward the castle. [EnemyKind.TANK] (from wave 10 on) is a larger, tougher, slower variant of
- * the same humanoid rig; [EnemyKind.WORM] (also from wave 10 on) is a fast burnt-orange space
- * worm with a completely different segmented body and its own brief "digging out of the ground"
- * entrance, sharing only the state machine/combat plumbing below with the other two. Humanoid
- * limbs are filled, rotated rounded-rect "capsules" (not stroked lines) driven by a walk-cycle
- * phase, so it reads as a solid little creature instead of a stick figure, with no sprite sheet
- * needed for the animation.
+ * toward the castle. [EnemyKind.TANK] (from wave 13 on) is a larger, tougher, slower variant of
+ * the same humanoid rig; [EnemyKind.WORM] (from wave 7 on) is a fast burnt-orange space worm with
+ * a completely different segmented body and its own brief "digging out of the ground" entrance;
+ * [EnemyKind.BOSS] (alone on wave 19, then alone again every 6 waves after) is the giant "Galaxy
+ * Snail" — see [drawSnail] — that crawls in solo with a huge health pool and, unlike every other
+ * kind, doesn't chip away at the castle on contact: reaching it is an instant, fatal explosion
+ * (see the WALKING branch of [update]). All three special kinds share only the state
+ * machine/combat plumbing below with the humanoid rig. Humanoid limbs are filled, rotated
+ * rounded-rect "capsules" (not stroked lines) driven by a walk-cycle phase, so it reads as a solid
+ * little creature instead of a stick figure, with no sprite sheet needed for the animation.
  */
 class Zombie(
     var x: Float,
@@ -71,6 +75,7 @@ class Zombie(
     val radius = when (kind) {
         EnemyKind.TANK -> 22f * 1.9f
         EnemyKind.WORM -> 22f * 1.15f
+        EnemyKind.BOSS -> 22f * 3.2f
         EnemyKind.NORMAL -> 22f
     } * visualScale
 
@@ -105,6 +110,46 @@ class Zombie(
     private val wormTailColor = Color.rgb(120, 55, 15)
     private val wormOutline = Color.rgb(65, 30, 10)
 
+    // Boss-only ("Galaxy Snail") state. galaxyPhase drives both the shell's slow spiral rotation
+    // and its stars' twinkle, accumulated locally in update() since Zombie has no access to
+    // GameEngine's shared worldTime. galaxyStars is a fixed set of star positions/phases within
+    // the shell (fraction of shell radius, so it scales with radius/visualScale), generated once
+    // per instance instead of per frame — same allocation-free reasoning as dustOffsets above.
+    // Lazy since only BOSS instances ever draw a shell.
+    private var galaxyPhase = 0f
+    private val galaxyStars: List<FloatArray> by lazy(LazyThreadSafetyMode.NONE) {
+        val rng = Random(System.identityHashCode(this))
+        (0 until 16).map {
+            val a = rng.nextFloat() * (2.0 * Math.PI).toFloat()
+            val dist = 0.15f + rng.nextFloat() * 0.78f
+            floatArrayOf(cos(a) * dist, sin(a) * dist, 0.03f + rng.nextFloat() * 0.05f, rng.nextFloat() * (2.0 * Math.PI).toFloat(), 2f + rng.nextFloat() * 3f)
+        }
+    }
+
+    // Boss-only: pulses true for exactly one frame at a time as it creeps toward the castle so
+    // GameEngine can drop a fiery trail decal at its current position, without GameEngine needing
+    // its own per-zombie movement timer. Consumed (and reset) via consumeTrailPulse().
+    private var trailPulse = false
+    private var trailTimer = 0f
+    private val trailIntervalSec = 0.1f
+
+    // Boss-only: set the instant it reaches the castle and detonates (see the WALKING branch of
+    // update()) so GameEngine can spawn a big explosion visual exactly once — consumed the same
+    // way as trailPulse, not read directly, so a caller can't accidentally react to it twice.
+    private var exploded = false
+
+    fun consumeTrailPulse(): Boolean {
+        val p = trailPulse
+        trailPulse = false
+        return p
+    }
+
+    fun consumeExplosion(): Boolean {
+        val e = exploded
+        exploded = false
+        return e
+    }
+
     fun applySlow(factor: Float, durationSec: Float) {
         slowFactor = min(slowFactor, factor)
         slowTimer = max(slowTimer, durationSec)
@@ -134,6 +179,8 @@ class Zombie(
             }
         }
 
+        if (kind == EnemyKind.BOSS) galaxyPhase += dt
+
         when (state) {
             ZombieState.WALKING -> {
                 facingAngle = GameMath.angleTo(x, y, castle.x, castle.y)
@@ -146,13 +193,36 @@ class Zombie(
                     val d = GameMath.distance(x, y, castle.x, castle.y)
                     val stopDistance = castle.radius * 1.55f + radius
                     if (d <= stopDistance) {
-                        state = ZombieState.ATTACKING
-                        attackCooldown = attackIntervalSec * 0.5f
+                        if (kind == EnemyKind.BOSS) {
+                            // Unlike every other kind, the boss doesn't settle into a repeated
+                            // attack-tick loop: reaching the castle is a single fatal explosion,
+                            // so it deals its (deliberately huge) contact damage exactly once and
+                            // goes straight to its death animation. rewardClaimed is pre-set so
+                            // GameEngine's kill-gold/kill-count bookkeeping — which otherwise
+                            // triggers off health hitting zero — doesn't credit the player with a
+                            // "kill" for the boss that just destroyed their castle.
+                            onDamageCastle(contactDamage)
+                            exploded = true
+                            rewardClaimed = true
+                            health = 0f
+                            state = ZombieState.DYING
+                            deathTimer = 0f
+                        } else {
+                            state = ZombieState.ATTACKING
+                            attackCooldown = attackIntervalSec * 0.5f
+                        }
                     } else {
                         val effectiveSpeed = speed * slowFactor
                         x += cos(facingAngle) * effectiveSpeed * dt
                         y += sin(facingAngle) * effectiveSpeed * dt
                         walkPhase += dt * (effectiveSpeed / (18f * visualScale))
+                        if (kind == EnemyKind.BOSS) {
+                            trailTimer += dt
+                            if (trailTimer >= trailIntervalSec) {
+                                trailTimer = 0f
+                                trailPulse = true
+                            }
+                        }
                     }
                 }
             }
@@ -213,10 +283,10 @@ class Zombie(
             paint.alpha = 255
         }
 
-        if (kind == EnemyKind.WORM) {
-            drawWorm(canvas, paint)
-        } else {
-            drawHumanoid(canvas, paint)
+        when (kind) {
+            EnemyKind.WORM -> drawWorm(canvas, paint)
+            EnemyKind.BOSS -> drawSnail(canvas, paint)
+            else -> drawHumanoid(canvas, paint)
         }
 
         canvas.restore()
@@ -333,6 +403,99 @@ class Zombie(
         for (offset in dustOffsets) {
             canvas.drawCircle(offset[0] * burstRadius, offset[1] * burstRadius * 0.55f, radius * 0.16f, paint)
         }
+    }
+
+    /**
+     * The boss ("Galaxy Snail"): a slow-moving foot/body (oriented along [facingAngle], like the
+     * worm) topped with a round shell rendered as a miniature spiral galaxy — see
+     * [drawGalaxyShell]. Its huge [radius] alone already reads as a giant among the other enemy
+     * kinds, so unlike the humanoid rig this doesn't need armor plates or other bulk cues.
+     */
+    private fun drawSnail(canvas: Canvas, paint: Paint) {
+        canvas.save()
+        canvas.rotate(Math.toDegrees(facingAngle.toDouble()).toFloat())
+
+        // Foot: a stretched, rounded body trailing behind the shell in the direction of travel.
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(58, 128, 70)
+        val footRect = RectF(-radius * 1.05f, -radius * 0.34f, radius * 0.85f, radius * 0.34f)
+        canvas.drawRoundRect(footRect, radius * 0.3f, radius * 0.3f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f * visualScale
+        paint.color = Color.rgb(22, 44, 24)
+        canvas.drawRoundRect(footRect, radius * 0.3f, radius * 0.3f, paint)
+
+        // Eye stalks reaching forward, tips wiggling gently with the walk cycle.
+        for (side in intArrayOf(-1, 1)) {
+            val baseX = radius * 0.55f
+            val baseY = side * radius * 0.16f
+            val tipX = radius * 0.98f
+            val tipY = side * radius * 0.34f + sin(walkPhase + side) * radius * 0.05f
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = radius * 0.1f
+            paint.color = Color.rgb(58, 128, 70)
+            canvas.drawLine(baseX, baseY, tipX, tipY, paint)
+            paint.style = Paint.Style.FILL
+            paint.color = Color.rgb(230, 225, 90)
+            canvas.drawCircle(tipX, tipY, radius * 0.12f, paint)
+            paint.color = Color.rgb(20, 20, 20)
+            canvas.drawCircle(tipX, tipY, radius * 0.05f, paint)
+        }
+        canvas.restore()
+
+        // Shell drawn upright (not rotated with facingAngle) so the galaxy spiral always reads
+        // the same regardless of travel direction, offset slightly toward the body's back.
+        canvas.save()
+        canvas.translate(-cos(facingAngle) * radius * 0.12f, -sin(facingAngle) * radius * 0.12f)
+        drawGalaxyShell(canvas, paint, radius * 0.8f)
+        canvas.restore()
+    }
+
+    /**
+     * The boss's shell: a deep-space disc with slowly-rotating translucent spiral arms, a field
+     * of twinkling stars (fixed positions, animated only via a per-star alpha pulse driven by
+     * [galaxyPhase] — see [galaxyStars]), and a bright core glow, so it reads as a miniature
+     * Milky Way mounted on the snail's back. Rotation/twinkle both animate off [galaxyPhase]
+     * rather than any shared clock, so this stays correct however many bosses are ever on screen
+     * at once.
+     */
+    private fun drawGalaxyShell(canvas: Canvas, paint: Paint, shellR: Float) {
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(12, 8, 30)
+        canvas.drawCircle(0f, 0f, shellR, paint)
+
+        canvas.save()
+        canvas.rotate(Math.toDegrees(galaxyPhase.toDouble()).toFloat() * 6f)
+        paint.style = Paint.Style.FILL
+        for (arm in 0 until 3) {
+            canvas.save()
+            canvas.rotate(arm * 120f)
+            paint.color = Color.argb(80, 140, 160, 255)
+            canvas.drawOval(-shellR * 0.14f, -shellR * 0.92f, shellR * 0.14f, -shellR * 0.1f, paint)
+            paint.color = Color.argb(60, 170, 130, 255)
+            canvas.drawOval(-shellR * 0.09f, -shellR * 0.75f, shellR * 0.09f, -shellR * 0.2f, paint)
+            canvas.restore()
+        }
+
+        for (star in galaxyStars) {
+            val twinkle = 0.35f + 0.65f * (0.5f + 0.5f * sin(galaxyPhase * star[4] + star[3]))
+            paint.color = Color.argb((90 + twinkle * 165).toInt(), 255, 255, 255)
+            canvas.drawCircle(star[0] * shellR, star[1] * shellR, star[2] * shellR, paint)
+        }
+        canvas.restore()
+
+        // Bright galactic core, glowing gold-white at the shell's center.
+        paint.shader = null
+        paint.color = Color.argb(200, 255, 250, 220)
+        canvas.drawCircle(0f, 0f, shellR * 0.16f, paint)
+        paint.color = Color.argb(110, 255, 235, 170)
+        canvas.drawCircle(0f, 0f, shellR * 0.3f, paint)
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.5f * visualScale
+        paint.color = Color.rgb(70, 60, 110)
+        canvas.drawCircle(0f, 0f, shellR, paint)
     }
 
     /** Draws a filled, outlined rounded-rect "capsule" limb rotated about (originX, originY). */

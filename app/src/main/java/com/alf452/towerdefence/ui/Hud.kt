@@ -156,6 +156,22 @@ class Hud {
         }
         canvas.drawText(title, cardRect.centerX(), cardRect.top + 42f * s, textPaint)
 
+        // Warn before a boss wave — reaching the castle is an instant, fatal loss (see
+        // Zombie's BOSS branch), so the player needs a clear cue to spend up before it starts.
+        // Positioned as a fraction of headerHeight (already shrunk by the fit factor above when
+        // the card is too short) rather than a fixed offset, so it stays inside the header gap —
+        // and clear of the first upgrade row at cardRect.top + headerHeight — even on a
+        // constrained viewport where fit < 1.
+        if (engine.waveManager.isBossWave(engine.waveManager.waveNumber)) {
+            val prevColor = textPaint.color
+            val prevSize = textPaint.textSize
+            textPaint.color = Color.rgb(255, 90, 70)
+            textPaint.textSize = 13f * s
+            canvas.drawText("⚠ BOSS WAVE — Galaxy Snail incoming", cardRect.centerX(), cardRect.top + headerHeight * 0.85f, textPaint)
+            textPaint.color = prevColor
+            textPaint.textSize = prevSize
+        }
+
         drawDivider(canvas, cardRect, cardRect.top + 56f * s, 90, s)
 
         // Extra horizontal inset (beyond the card's own margin) so each row reads as a

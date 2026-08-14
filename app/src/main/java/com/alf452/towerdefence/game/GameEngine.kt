@@ -33,6 +33,14 @@ private class Star(val x: Float, val y: Float, val radius: Float, val phase: Flo
 private class BloodSplatter(val x: Float, val y: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
 
 /**
+ * One puff of the boss's green fire trail, dropped periodically behind it as it creeps toward
+ * the castle (see [Zombie.consumeTrailPulse]). Unlike [BloodSplatter], which is permanent until
+ * the next wave wipes it, these fade out on their own after [snailFlameTtlSec] — a lingering
+ * trail of "still burning" ground, not a permanent stain.
+ */
+private class SnailFlame(val x: Float, val y: Float, var age: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
+
+/**
  * A tumbling rock drifting left-to-right across the space backdrop, wrapping back to the left
  * edge once it drifts off the right side. [shape] is a jagged local-space outline (centered on
  * the origin) built once at generation time; drawing just translates/rotates the canvas to the
@@ -92,6 +100,12 @@ class GameEngine {
     // capped in between) so a long run never accumulates enough decals to slow the game down.
     private val bloodSplatters = mutableListOf<BloodSplatter>()
     private val maxBloodSplatters = 160
+
+    // The boss's green fire trail: self-expiring (see snailFlameTtlSec), also hard-capped since
+    // it's dropped continuously (every ~0.1s of boss movement) rather than once per kill.
+    private val snailFlames = mutableListOf<SnailFlame>()
+    private val maxSnailFlames = 220
+    private val snailFlameTtlSec = 0.8f
 
     // Cannon slots unlock in this order: N, E, S, W.
     val cannonSlots = listOf(
@@ -443,7 +457,14 @@ class GameEngine {
                 castle.takeDamage(dmg)
                 if (wasAlive) onCastleHit?.invoke()
             }
+            if (z.kind == EnemyKind.BOSS) {
+                if (z.consumeTrailPulse()) spawnSnailTrail(z.x, z.y)
+                if (z.consumeExplosion()) explosions.add(Explosion(z.x, z.y, z.radius * 1.8f, scale))
+            }
         }
+
+        for (f in snailFlames) f.age += dt
+        snailFlames.removeAll { it.age >= snailFlameTtlSec }
 
         val projIter = projectiles.iterator()
         while (projIter.hasNext()) {
@@ -501,7 +522,13 @@ class GameEngine {
             slot.update(dt, castle, ring, zombies) { s, target, fx, fy -> fire(s, target, fx, fy) }
         }
 
-        val waveCleared = waveManager.allSpawned() && zombies.none { it.isAlive() }
+        // castle.isDestroyed() is checked here too, not just after this function returns: the
+        // boss (EnemyKind.BOSS) deals its fatal contact damage and goes straight to DYING in the
+        // same update() tick it reaches the castle (see Zombie.update's BOSS branch), so without
+        // this guard a boss-wave death would look like a clean wave clear for one frame —
+        // awarding the wave-clear bonus, incrementing waveNumber, and healing a castle that's
+        // actually already destroyed — before the GAME_OVER check below catches up.
+        val waveCleared = waveManager.allSpawned() && zombies.none { it.isAlive() } && !castle.isDestroyed()
         if (waveCleared) {
             // Flat, same reasoning as the per-kill gold value in WaveManager: kill count
             // growth alone is enough to keep income rising, so this doesn't need its own
@@ -579,8 +606,30 @@ class GameEngine {
         if (state != GameState.INTERMISSION) return
         waveManager.startWave(waveManager.waveNumber)
         state = GameState.PLAYING
-        // Wipe the last wave's blood splatters so the decal count never grows unbounded.
+        // Wipe the last wave's blood splatters (and any leftover boss fire trail) so decals
+        // never grow unbounded across waves.
         bloodSplatters.clear()
+        snailFlames.clear()
+    }
+
+    /**
+     * Scatters [count] blobs at random angles within [distFactor]*[r] of the origin, sized
+     * between [radiusMin]*[r] and ([radiusMin]+[radiusSpread])*[r] — the shared jitter pattern
+     * behind both [spawnBloodSplatter]'s splatter and [spawnSnailTrail]'s fire puffs, so a future
+     * tweak to how these decals scatter only needs changing in one place.
+     */
+    private fun scatterBlobs(count: Int, r: Float, distFactor: Float, radiusMin: Float, radiusSpread: Float): Triple<FloatArray, FloatArray, FloatArray> {
+        val blobX = FloatArray(count)
+        val blobY = FloatArray(count)
+        val blobRadius = FloatArray(count)
+        for (i in 0 until count) {
+            val angle = Random.nextFloat() * (2f * Math.PI).toFloat()
+            val dist = Random.nextFloat() * r * distFactor
+            blobX[i] = dist * cos(angle)
+            blobY[i] = dist * sin(angle)
+            blobRadius[i] = r * (radiusMin + Random.nextFloat() * radiusSpread)
+        }
+        return Triple(blobX, blobY, blobRadius)
     }
 
     /**
@@ -593,20 +642,22 @@ class GameEngine {
         val blobCount = when (zombie.kind) {
             EnemyKind.TANK -> 6
             EnemyKind.WORM -> 4
+            EnemyKind.BOSS -> 10
             EnemyKind.NORMAL -> 3
         }
-        val r = zombie.radius
-        val blobX = FloatArray(blobCount)
-        val blobY = FloatArray(blobCount)
-        val blobRadius = FloatArray(blobCount)
-        for (i in 0 until blobCount) {
-            val angle = Random.nextFloat() * (2f * Math.PI).toFloat()
-            val dist = Random.nextFloat() * r * 0.85f
-            blobX[i] = dist * cos(angle)
-            blobY[i] = dist * sin(angle)
-            blobRadius[i] = r * (0.14f + Random.nextFloat() * 0.22f)
-        }
+        val (blobX, blobY, blobRadius) = scatterBlobs(blobCount, zombie.radius, distFactor = 0.85f, radiusMin = 0.14f, radiusSpread = 0.22f)
         bloodSplatters.add(BloodSplatter(zombie.x, zombie.y, blobX, blobY, blobRadius))
+    }
+
+    /**
+     * Drops one puff of the boss's green fire trail at [x],[y] — called once per
+     * [Zombie.consumeTrailPulse] pulse, i.e. roughly every 0.1s of boss movement, so the trail
+     * reads as continuous rather than a string of separate dots.
+     */
+    private fun spawnSnailTrail(x: Float, y: Float) {
+        if (snailFlames.size >= maxSnailFlames) snailFlames.removeAt(0)
+        val (blobX, blobY, blobRadius) = scatterBlobs(3, 20f * scale, distFactor = 0.6f, radiusMin = 0.35f, radiusSpread = 0.35f)
+        snailFlames.add(SnailFlame(x, y, 0f, blobX, blobY, blobRadius))
     }
 
     fun restart() {
@@ -614,6 +665,7 @@ class GameEngine {
         projectiles.clear()
         explosions.clear()
         bloodSplatters.clear()
+        snailFlames.clear()
         gold = 0
         killCount = 0
         cannonLevel = 1
@@ -744,6 +796,19 @@ class GameEngine {
         for (b in bloodSplatters) {
             for (i in b.blobX.indices) {
                 canvas.drawCircle(b.x + b.blobX[i], b.y + b.blobY[i], b.blobRadius[i], paint)
+            }
+        }
+
+        // Boss fire trail: fades from a bright yellow-green flame core out to transparent as it
+        // burns out (see snailFlameTtlSec), instead of the flat/permanent blood-splatter tint.
+        paint.style = Paint.Style.FILL
+        for (f in snailFlames) {
+            val t = GameMath.clamp(f.age / snailFlameTtlSec, 0f, 1f)
+            val alpha = ((1f - t) * 210).toInt()
+            val shrink = 1f - t * 0.4f
+            for (i in f.blobX.indices) {
+                paint.color = Color.argb(alpha, (60 + t * 130).toInt(), 230, (50 - t * 30).toInt().coerceAtLeast(10))
+                canvas.drawCircle(f.x + f.blobX[i], f.y + f.blobY[i], f.blobRadius[i] * shrink, paint)
             }
         }
 
