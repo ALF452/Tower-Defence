@@ -273,7 +273,7 @@ class Hud {
 
         drawCard(canvas, cardRect, s, Color.rgb(90, 78, 120))
 
-        textPaint.textSize = 27f * s
+        textPaint.textSize = 32f * s
         val title = if (engine.waveManager.waveNumber == 1) {
             "Prepare your defenses"
         } else {
@@ -291,7 +291,7 @@ class Hud {
             val prevColor = textPaint.color
             val prevSize = textPaint.textSize
             textPaint.color = Color.rgb(255, 90, 70)
-            textPaint.textSize = 15f * s
+            textPaint.textSize = 18f * s
             val bossName = bossVariantLabel(engine.waveManager.bossVariantForWave(engine.waveManager.waveNumber))
             canvas.drawText("⚠ BOSS WAVE — $bossName incoming", cardRect.centerX(), cardRect.top + headerHeight * 0.85f, textPaint)
             textPaint.color = prevColor
@@ -304,7 +304,7 @@ class Hud {
 
         if (showMutators) {
             textPaint.textAlign = Paint.Align.LEFT
-            textPaint.textSize = 16f * s
+            textPaint.textSize = 19f * s
             textPaint.color = Color.argb(190, 255, 255, 255)
             canvas.drawText("MUTATORS (optional, bonus Star Dust)", cardRect.left + buttonMargin, buttonTop + mutatorLabelHeight * 0.85f, textPaint)
             textPaint.color = Color.WHITE
@@ -350,7 +350,7 @@ class Hud {
 
         if (unlocked) {
             textPaint.textAlign = Paint.Align.LEFT
-            textPaint.textSize = 16f * s
+            textPaint.textSize = 19f * s
             textPaint.color = Color.argb(190, 255, 255, 255)
             canvas.drawText("SPECIALIZATIONS", cardRect.left + buttonMargin, buttonTop + dividerGap * 0.7f, textPaint)
             textPaint.color = Color.WHITE
@@ -394,8 +394,8 @@ class Hud {
         buttonTop += finalGap - rowGap
         startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + tileHeight)
         drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
-        textPaint.textSize = 24f * s
-        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 8f * s, textPaint)
+        textPaint.textSize = 30f * s
+        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 10f * s, textPaint)
     }
 
     /** Display name for the upcoming boss wave's warning banner — see [GameEngine.abilityStatuses] for the equivalent ability-label pattern. */
@@ -481,16 +481,16 @@ class Hud {
         // overflow a tile that had shrunk well past what [scale] implied.
         val tileScale = tileWidth / 306f
 
-        textPaint.textSize = 20f * tileScale
+        textPaint.textSize = 30f * tileScale
         textPaint.color = Color.WHITE
-        canvas.drawText(name, rect.centerX(), rect.top + rect.height() * 0.24f, textPaint)
-
-        textPaint.textSize = 15f * tileScale
-        textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.41f, textPaint)
-        canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.59f, textPaint)
+        canvas.drawText(name, rect.centerX(), rect.top + rect.height() * 0.26f, textPaint)
 
         textPaint.textSize = 21f * tileScale
+        textPaint.color = Color.argb(210, 255, 255, 255)
+        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.43f, textPaint)
+        canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.60f, textPaint)
+
+        textPaint.textSize = 30f * tileScale
         textPaint.color = Color.WHITE
         val costLabel = costLabelOverride ?: cost?.let { "${it}g" } ?: "MAX"
         canvas.drawText(costLabel, rect.centerX(), rect.top + rect.height() * 0.85f, textPaint)
@@ -512,17 +512,17 @@ class Hud {
         drawBubbleBackground(canvas, rect, color, cornerRadius = 12f * scale)
 
         val chipScale = chipWidth / 226f
-        textPaint.textSize = 16f * chipScale
+        textPaint.textSize = 19f * chipScale
         textPaint.color = Color.WHITE
-        canvas.drawText(mutator.label, rect.centerX(), rect.top + rect.height() * 0.30f, textPaint)
+        canvas.drawText(mutator.label, rect.centerX(), rect.top + rect.height() * 0.32f, textPaint)
 
-        textPaint.textSize = 12f * chipScale
+        textPaint.textSize = 15f * chipScale
         textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(mutator.description, rect.centerX(), rect.top + rect.height() * 0.54f, textPaint)
+        canvas.drawText(mutator.description, rect.centerX(), rect.top + rect.height() * 0.56f, textPaint)
 
-        textPaint.textSize = 14f * chipScale
+        textPaint.textSize = 17f * chipScale
         textPaint.color = Color.WHITE
-        canvas.drawText("+${mutator.starDustBonusPercent}% Star Dust", rect.centerX(), rect.top + rect.height() * 0.82f, textPaint)
+        canvas.drawText("+${mutator.starDustBonusPercent}% Star Dust", rect.centerX(), rect.top + rect.height() * 0.84f, textPaint)
 
         return rect
     }
