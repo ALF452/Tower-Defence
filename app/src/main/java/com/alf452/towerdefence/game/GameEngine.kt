@@ -281,6 +281,19 @@ class GameEngine {
     private var metaCannonHeadStart = 0
     private var metaArcherHeadStart = 0
 
+    // Optional per-run risk/reward modifiers (see Mutator.kt) — toggleable only during wave 1's
+    // intermission (see toggleMutator()) and locked in the instant wave 1 starts (see
+    // startNextWave()). Cleared on every restart() so each new run requires an explicit re-opt-in
+    // rather than silently inheriting the previous run's difficulty.
+    private val _activeMutators = mutableSetOf<Mutator>()
+    val activeMutators: Set<Mutator> get() = _activeMutators
+    // Applied the same way Overcharge speeds firing up (see WeaponSlot.update's fireRateMultiplier
+    // — cooldown counts down at dt * multiplier, so a multiplier below 1 slows firing instead).
+    // 1f / 1.08f makes time-to-fire = fireIntervalSec * 1.08, matching the sim's tuned value.
+    private val swarmFireRateMultiplier = 1f / 1.08f
+    private val glassCannonHealthShieldMultiplier = 0.7f
+    private val fastForwardSpeedMultiplier = 1.12f
+
     var waveManager = WaveManager()
         private set
     var state = GameState.INTERMISSION
@@ -676,10 +689,14 @@ class GameEngine {
 
     /** Spawning, weapon targeting/firing and wave-clear detection only run while a wave is active. */
     private fun updateWaveLogic(dt: Float) {
-        waveManager.update(dt, arenaRadius(), castle.x, castle.y, scale)?.let { zombies.add(it) }
+        val speedMultiplier = if (Mutator.FAST_FORWARD in activeMutators) fastForwardSpeedMultiplier else 1f
+        waveManager.update(dt, arenaRadius(), castle.x, castle.y, scale, speedMultiplier)?.let { zombies.add(it) }
 
         val ring = ringRadius()
-        val fireRateMultiplier = if (overchargeTimer > 0f) overchargeFireRateMultiplier else 1f
+        // Overcharge (speedup) and Swarm (slowdown) stack multiplicatively rather than one simply
+        // overriding the other, so casting Overcharge during a Swarm run still helps.
+        var fireRateMultiplier = if (overchargeTimer > 0f) overchargeFireRateMultiplier else 1f
+        if (Mutator.SWARM in activeMutators) fireRateMultiplier *= swarmFireRateMultiplier
         for (slot in cannonSlots) {
             slot.update(dt, castle, ring, zombies, fireRateMultiplier) { s, target, fx, fy -> fire(s, target, fx, fy) }
         }
@@ -704,7 +721,16 @@ class GameEngine {
             gold += bonus
             lastWaveGoldEarned = bonus
             waveManager.endWave()
-            castle.healBetweenWaves()
+            // Iron Will trades this courtesy heal (and any shield built up during the wave) away
+            // for extra Star Dust — see Mutator.kt. Regen is paused too (unpaused again the
+            // instant the next wave starts, in startNextWave()), otherwise shield would just
+            // silently refill while the player takes their time on the upgrade screen.
+            if (Mutator.IRON_WILL in activeMutators) {
+                castle.depleteShield()
+                castle.setShieldRegenPaused(true)
+            } else {
+                castle.healBetweenWaves()
+            }
             state = GameState.INTERMISSION
         }
     }
@@ -777,8 +803,18 @@ class GameEngine {
 
     fun startNextWave() {
         if (state != GameState.INTERMISSION) return
+        // Mutators are only togglable during wave 1's intermission (see toggleMutator()), so this
+        // is exactly the point they lock in for the run — Glass Cannon's castle debuff is applied
+        // here, once, rather than at restart() time (before the player has even chosen).
+        if (waveManager.waveNumber == 1 && Mutator.GLASS_CANNON in activeMutators) {
+            castle.applyHealthShieldMultiplier(glassCannonHealthShieldMultiplier)
+        }
         waveManager.startWave(waveManager.waveNumber)
         state = GameState.PLAYING
+        // Regen was paused for Iron Will's between-wave shield-reset penalty (see the waveCleared
+        // block above) -- resumes the instant combat starts, whether or not Iron Will is active,
+        // so this is unconditional rather than gated behind the mutator check.
+        castle.setShieldRegenPaused(false)
         // Wipe the last wave's blood splatters (and any leftover boss trail/beam flashes) so
         // decals never grow unbounded across waves.
         bloodSplatters.clear()
@@ -860,6 +896,7 @@ class GameEngine {
         castle.resetForNewGame()
         waveManager = WaveManager()
         state = GameState.INTERMISSION
+        _activeMutators.clear()
         // Reapplies Armory head starts on top of the bare defaults just set above (and also
         // derives each weapon slot's `unlocked` state via recomputeCannonStats()/
         // recomputeArcherStats(), so no separate reset call is needed for that either).
@@ -887,6 +924,20 @@ class GameEngine {
         recomputeCannonStats()
         recomputeArcherStats()
     }
+
+    /**
+     * Toggles [mutator] on/off for the run about to start. Only allowed during wave 1's
+     * intermission — once wave 1 begins ([startNextWave] locks the choice in), the run's
+     * difficulty/reward trade can't change mid-run. Returns whether the toggle was allowed.
+     */
+    fun toggleMutator(mutator: Mutator): Boolean {
+        if (state != GameState.INTERMISSION || waveManager.waveNumber != 1) return false
+        if (!_activeMutators.remove(mutator)) _activeMutators.add(mutator)
+        return true
+    }
+
+    /** Sum of every active mutator's Star Dust bonus — see [Mutator.starDustBonusPercent]. */
+    fun mutatorStarDustBonusPercent(): Int = activeMutators.sumOf { it.starDustBonusPercent }
 
     fun wallUpgradeCost(): Int = castle.wallUpgradeCost()
     fun cannonUpgradeCost(): Int? {

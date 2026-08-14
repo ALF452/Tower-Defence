@@ -30,7 +30,7 @@ class GameActivity : AppCompatActivity() {
         )
         gameView.engine.onGameOver = { waveReached, kills ->
             highScores.recordRun(waveReached, kills)
-            metaProgress.awardFromRun(waveReached, kills)
+            metaProgress.awardFromRun(waveReached, kills, gameView.engine.mutatorStarDustBonusPercent())
         }
         gameView.engine.onCannonFire = { soundEngine.playCannonFire() }
         gameView.engine.onBowFire = { soundEngine.playBowShoot() }

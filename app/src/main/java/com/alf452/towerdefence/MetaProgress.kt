@@ -35,9 +35,15 @@ class MetaProgress(context: Context) {
         get() = prefs.getInt(KEY_ARCHER_LEVEL, 0)
         private set(value) { prefs.edit().putInt(KEY_ARCHER_LEVEL, value).apply() }
 
-    /** Star Dust earned at the end of a run, from how far it got and how much it killed. */
-    fun awardFromRun(waveReached: Int, kills: Int) {
-        starDust += waveReached * 5 + kills
+    /**
+     * Star Dust earned at the end of a run, from how far it got and how much it killed.
+     * [bonusPercent] is the run's active mutators' combined Star Dust bonus (see
+     * [com.alf452.towerdefence.game.GameEngine.mutatorStarDustBonusPercent]) — 0 for a run with
+     * none active.
+     */
+    fun awardFromRun(waveReached: Int, kills: Int, bonusPercent: Int = 0) {
+        val base = waveReached * 5 + kills
+        starDust += base + (base * bonusPercent) / 100
     }
 
     fun startingGoldBonus(): Int = startingGoldLevel * STARTING_GOLD_PER_LEVEL

@@ -134,8 +134,12 @@ class WaveManager {
         return queue
     }
 
-    /** Returns a newly spawned zombie this frame, or null if none spawned. */
-    fun update(dt: Float, arenaRadius: Float, centerX: Float, centerY: Float, visualScale: Float): Zombie? {
+    /**
+     * Returns a newly spawned zombie this frame, or null if none spawned. [speedMultiplier]
+     * applies the Fast Forward mutator's speed boost (see [Mutator.FAST_FORWARD]) uniformly
+     * across every kind, boss included — only ever non-1 when that mutator is active for the run.
+     */
+    fun update(dt: Float, arenaRadius: Float, centerX: Float, centerY: Float, visualScale: Float, speedMultiplier: Float = 1f): Zombie? {
         if (!waveInProgress || spawnQueue.isEmpty()) return null
         spawnTimer -= dt
         if (spawnTimer > 0f) return null
@@ -203,7 +207,7 @@ class WaveManager {
             EnemyKind.FLYER -> baseSpeed * 1.5f
             EnemyKind.SHIELDED -> baseSpeed * 0.75f
             EnemyKind.NORMAL -> baseSpeed
-        }) * visualScale
+        }) * visualScale * speedMultiplier
         // The boss's contactDamage is never applied through the normal repeated-tick path (see
         // Zombie.update's BOSS branch) — reaching the castle is a single fatal explosion instead,
         // so this value just needs to comfortably exceed any possible remaining health+shield.

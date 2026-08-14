@@ -9,6 +9,7 @@ import com.alf452.towerdefence.game.BossVariant
 import com.alf452.towerdefence.game.GameEngine
 import com.alf452.towerdefence.game.GameMath
 import com.alf452.towerdefence.game.GameState
+import com.alf452.towerdefence.game.Mutator
 import kotlin.math.ceil
 
 /**
@@ -32,6 +33,10 @@ class Hud {
     private var bleedButtonRect = RectF()
     private var startWaveButtonRect = RectF()
     private var restartButtonRect = RectF()
+
+    // Mutator toggle chips (see drawUpgradePopup/Mutator.kt) — only populated/interactive during
+    // wave 1's intermission, matching GameEngine.toggleMutator's own guard.
+    private var mutatorButtonRects: Map<Mutator, RectF> = emptyMap()
 
     // The health/shield bars + gold/wave chips, recomputed by drawTopBars() every frame like
     // every other rect in this class. Excluded from Orbital Strike's targeting tap below so
@@ -226,9 +231,17 @@ class Hud {
         val tileWidth = (buttonWidth - 2f * rowGap) / 3f
         var tileHeight = tileWidth
 
+        // Mutators (see Mutator.kt) are only choosable during wave 1's intermission, matching
+        // GameEngine.toggleMutator's own guard — every later intermission skips this section
+        // entirely rather than showing the now-locked-in choice as disabled chips.
+        val showMutators = engine.waveManager.waveNumber == 1
+        var mutatorLabelHeight = 22f * s
+        var chipHeight = 66f * s
+        val mutatorSectionHeight = if (showMutators) mutatorLabelHeight + chipHeight + rowGap else 0f
+
         // Base row always shows; specializations add a divider label plus a second tile row
         // (Explosive, Slow, Bleed) once wave 10 is cleared.
-        var contentHeight = headerHeight + tileHeight + rowGap
+        var contentHeight = headerHeight + mutatorSectionHeight + tileHeight + rowGap
         if (unlocked) contentHeight += dividerGap + tileHeight + rowGap
         contentHeight += finalGap + tileHeight + 16f * s // safety margin
 
@@ -248,6 +261,8 @@ class Hud {
             headerHeight *= fit
             dividerGap *= fit
             finalGap *= fit
+            mutatorLabelHeight *= fit
+            chipHeight *= fit
         }
 
         val cardLeft = (w - cardWidth) / 2f
@@ -284,6 +299,32 @@ class Hud {
         drawDivider(canvas, cardRect, cardRect.top + 56f * s, 90, s)
 
         var buttonTop = cardRect.top + headerHeight
+
+        if (showMutators) {
+            textPaint.textAlign = Paint.Align.LEFT
+            textPaint.textSize = 14f * s
+            textPaint.color = Color.argb(190, 255, 255, 255)
+            canvas.drawText("MUTATORS (optional, bonus Star Dust)", cardRect.left + buttonMargin, buttonTop + mutatorLabelHeight * 0.85f, textPaint)
+            textPaint.color = Color.WHITE
+            textPaint.textAlign = Paint.Align.CENTER
+            buttonTop += mutatorLabelHeight
+
+            val mutators = Mutator.entries
+            // Reuses rowGap as the chip gap rather than introducing a separate constant — same
+            // spacing the tile grid uses between columns.
+            val chipWidth = (buttonWidth - (mutators.size - 1) * rowGap) / mutators.size
+            val rects = mutableMapOf<Mutator, RectF>()
+            var chipLeft = cardRect.left + buttonMargin
+            for (m in mutators) {
+                rects[m] = drawMutatorChip(canvas, chipLeft, buttonTop, chipWidth, chipHeight, m, m in engine.activeMutators, s)
+                chipLeft += chipWidth + rowGap
+            }
+            mutatorButtonRects = rects
+            buttonTop += chipHeight + rowGap
+        } else {
+            mutatorButtonRects = emptyMap()
+        }
+
         val col0 = cardRect.left + buttonMargin
         val col1 = col0 + tileWidth + rowGap
         val col2 = col1 + tileWidth + rowGap
@@ -454,6 +495,35 @@ class Hud {
         return rect
     }
 
+    /**
+     * A toggleable mutator chip — name, a short effect description, and its Star Dust bonus,
+     * highlighted red when [active] so the player can see what they're opting into before a run
+     * starts rather than only discovering it mid-run. Text sizing follows the same
+     * tileWidth-derived-scale approach as [drawUpgradeTile] (203 is a chip's width at scale=1 on
+     * this popup's reference card width, with 4 mutators sharing the row) rather than [scale]
+     * directly, for the same narrow-split-screen overflow reason.
+     */
+    private fun drawMutatorChip(canvas: Canvas, left: Float, top: Float, chipWidth: Float, chipHeight: Float, mutator: Mutator, active: Boolean, scale: Float): RectF {
+        val rect = RectF(left, top, left + chipWidth, top + chipHeight)
+        val color = if (active) Color.rgb(175, 60, 55) else Color.rgb(60, 54, 74)
+        drawBubbleBackground(canvas, rect, color, cornerRadius = 12f * scale)
+
+        val chipScale = chipWidth / 203f
+        textPaint.textSize = 13f * chipScale
+        textPaint.color = Color.WHITE
+        canvas.drawText(mutator.label, rect.centerX(), rect.top + rect.height() * 0.30f, textPaint)
+
+        textPaint.textSize = 9.5f * chipScale
+        textPaint.color = Color.argb(210, 255, 255, 255)
+        canvas.drawText(mutator.description, rect.centerX(), rect.top + rect.height() * 0.54f, textPaint)
+
+        textPaint.textSize = 11f * chipScale
+        textPaint.color = Color.WHITE
+        canvas.drawText("+${mutator.starDustBonusPercent}% Star Dust", rect.centerX(), rect.top + rect.height() * 0.82f, textPaint)
+
+        return rect
+    }
+
     private fun drawGameOverPopup(canvas: Canvas, engine: GameEngine) {
         val s = engine.scale
         val w = engine.screenW
@@ -482,7 +552,9 @@ class Hud {
     fun handleTouch(x: Float, y: Float, engine: GameEngine) {
         when (engine.state) {
             GameState.INTERMISSION -> {
+                val tappedMutator = mutatorButtonRects.entries.firstOrNull { it.value.contains(x, y) }?.key
                 when {
+                    tappedMutator != null -> engine.toggleMutator(tappedMutator)
                     wallButtonRect.contains(x, y) -> engine.purchaseWallUpgrade()
                     cannonButtonRect.contains(x, y) -> engine.purchaseCannonUpgrade()
                     archerButtonRect.contains(x, y) -> engine.purchaseArcherUpgrade()

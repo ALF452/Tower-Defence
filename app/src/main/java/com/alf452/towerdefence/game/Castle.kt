@@ -54,9 +54,26 @@ class Castle(var x: Float, var y: Float) {
         private set
     var shield = maxShield
 
+    // Set once, only via applyHealthShieldMultiplier() -- the Glass Cannon mutator's -30% castle
+    // durability (see Mutator.kt). Baked into the maxHealth/maxShield formulas themselves (below
+    // and in applyWallUpgrade()) rather than applied as a one-off post-hoc scale, so a wall
+    // upgrade purchased mid-run recomputes from the already-reduced baseline instead of silently
+    // undoing the mutator's effect.
+    var healthShieldMultiplier = 1f
+        private set
+
     private var shieldRegenPerSec = 1.5f
     private var timeSinceLastHit = 999f
     private val shieldRegenDelaySec = 3f
+
+    // The Iron Will mutator (see Mutator.kt) zeroes the shield at each wave clear via
+    // depleteShield() — without this flag, [update]'s unconditional regen (called every frame
+    // regardless of game state, including the player-paced, unbounded intermission) would just
+    // fill it back up long before the next wave starts, silently undoing the mutator's effect.
+    // Only ever toggled by GameEngine around a PLAYING/INTERMISSION transition, not persisted
+    // across waves the way [healthShieldMultiplier] is.
+    var shieldRegenPaused = false
+        private set
 
     /** Pixel radius of the keep, set from the device's resolution. Only changed via [updateVisualMetrics]. */
     var radius = 70f
@@ -84,18 +101,39 @@ class Castle(var x: Float, var y: Float) {
     private var flagPhase = 0f
     private var isDead = false
 
+    // Shared by applyWallUpgrade() and applyHealthShieldMultiplier() so the two recompute paths
+    // can never silently drift apart if the wall-level formula is ever retuned.
+    private fun computeMaxHealth(): Float = (100f + (wallLevel - 1) * 15f) * healthShieldMultiplier
+    private fun computeMaxShield(): Float = (40f + wallLevel * 30f) * healthShieldMultiplier
+
     fun applyWallUpgrade() {
         wallLevel++
         val prevMaxHealth = maxHealth
         val prevMaxShield = maxShield
-        maxHealth = 100f + (wallLevel - 1) * 15f
-        maxShield = 40f + wallLevel * 30f
+        maxHealth = computeMaxHealth()
+        maxShield = computeMaxShield()
         shieldRegenPerSec = 1f + wallLevel * 0.5f
         // Grant the newly unlocked capacity immediately instead of only on regen/heal.
         health += (maxHealth - prevMaxHealth)
         shield += (maxShield - prevMaxShield)
         shield = GameMath.clamp(shield, 0f, maxShield)
         health = GameMath.clamp(health, 0f, maxHealth)
+    }
+
+    /**
+     * Applied once, right as wave 1 begins, if the Glass Cannon mutator is active for this run
+     * (see [GameEngine.startNextWave]) — recomputes current max/health/shield from the same
+     * formula [applyWallUpgrade] uses so it composes correctly with wallLevel, then grants/clamps
+     * the delta exactly like a wall upgrade does.
+     */
+    fun applyHealthShieldMultiplier(multiplier: Float) {
+        healthShieldMultiplier = multiplier
+        val prevMaxHealth = maxHealth
+        val prevMaxShield = maxShield
+        maxHealth = computeMaxHealth()
+        maxShield = computeMaxShield()
+        health = GameMath.clamp(health + (maxHealth - prevMaxHealth), 0f, maxHealth)
+        shield = GameMath.clamp(shield + (maxShield - prevMaxShield), 0f, maxShield)
     }
 
     fun wallUpgradeCost(): Int = (40 * Math.pow(1.3, (wallLevel - 1).toDouble())).toInt()
@@ -125,7 +163,7 @@ class Castle(var x: Float, var y: Float) {
         timeSinceLastHit += dt
         if (damageFlash > 0f) damageFlash = max(0f, damageFlash - dt * 2.5f)
         flagPhase += dt * 3f
-        if (!isDead && timeSinceLastHit > shieldRegenDelaySec && shield < maxShield) {
+        if (!isDead && !shieldRegenPaused && timeSinceLastHit > shieldRegenDelaySec && shield < maxShield) {
             shield = GameMath.clamp(shield + shieldRegenPerSec * dt, 0f, maxShield)
         }
     }
@@ -135,8 +173,24 @@ class Castle(var x: Float, var y: Float) {
         health = GameMath.clamp(health + maxHealth * 0.15f, 0f, maxHealth)
     }
 
+    /**
+     * The Iron Will mutator's between-wave penalty (see Mutator.kt) — paired with skipping
+     * [healBetweenWaves] and pausing regen via [setShieldRegenPaused] so shield can't just
+     * silently refill through the (player-paced, unbounded) intermission instead.
+     */
+    fun depleteShield() {
+        shield = 0f
+    }
+
+    /** Only ever called by GameEngine around a PLAYING/INTERMISSION transition — see [depleteShield]. */
+    fun setShieldRegenPaused(paused: Boolean) {
+        shieldRegenPaused = paused
+    }
+
     fun resetForNewGame() {
         wallLevel = 1
+        healthShieldMultiplier = 1f
+        shieldRegenPaused = false
         maxHealth = 100f
         health = maxHealth
         maxShield = 70f
