@@ -86,7 +86,7 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
         var target: Zombie? = null
         var bestDist = Float.MAX_VALUE
         for (z in zombies) {
-            if (!z.isAlive()) continue
+            if (!z.isAlive() || !z.canBeTargetedBy(type)) continue
             val d = GameMath.distance(pos[0], pos[1], z.x, z.y)
             if (d <= range && d < bestDist) {
                 bestDist = d

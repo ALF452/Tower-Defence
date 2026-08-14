@@ -14,7 +14,7 @@ import kotlin.math.sin
 import kotlin.random.Random
 
 enum class ZombieState { WALKING, ATTACKING, DYING, DEAD }
-enum class EnemyKind { NORMAL, TANK, WORM, BOSS }
+enum class EnemyKind { NORMAL, TANK, WORM, BOSS, FLYER, SHIELDED }
 
 /**
  * A hostile creature shambling (or, for [EnemyKind.WORM], slithering) in from the wave edge
@@ -24,10 +24,20 @@ enum class EnemyKind { NORMAL, TANK, WORM, BOSS }
  * [EnemyKind.BOSS] (alone on wave 19, then alone again every 6 waves after) is the giant "Galaxy
  * Snail" — see [drawSnail] — that crawls in solo with a huge health pool and, unlike every other
  * kind, doesn't chip away at the castle on contact: reaching it is an instant, fatal explosion
- * (see the WALKING branch of [update]). All three special kinds share only the state
- * machine/combat plumbing below with the humanoid rig. Humanoid limbs are filled, rotated
- * rounded-rect "capsules" (not stroked lines) driven by a walk-cycle phase, so it reads as a solid
- * little creature instead of a stick figure, with no sprite sheet needed for the animation.
+ * (see the WALKING branch of [update]).
+ *
+ * [EnemyKind.FLYER] (from wave 10 on) and [EnemyKind.SHIELDED] (from wave 16 on) are this game's
+ * weapon-mix enemies: see [canBeTargetedBy] — a Flyer can only be *targeted* (locked onto) by
+ * archers, and a Shielded zombie only by cannons, so a player who only ever invests in one weapon
+ * category eventually hits a wall neither existing enemy kind created. A cannon's splash can still
+ * incidentally catch a Flyer standing near its blast (that's about the explosion's physical
+ * radius, not target *lock*), but Shielded zombies are immune to arrow damage outright, including
+ * stray impacts — a shield reads as blocking arrows completely, not just being hard to aim at.
+ *
+ * All five special kinds share only the state machine/combat plumbing below with the humanoid
+ * rig. Humanoid limbs are filled, rotated rounded-rect "capsules" (not stroked lines) driven by a
+ * walk-cycle phase, so it reads as a solid little creature instead of a stick figure, with no
+ * sprite sheet needed for the animation.
  */
 class Zombie(
     var x: Float,
@@ -40,6 +50,13 @@ class Zombie(
     val kind: EnemyKind = EnemyKind.NORMAL
 ) {
     val isTank: Boolean get() = kind == EnemyKind.TANK
+
+    /** See the class doc's FLYER/SHIELDED paragraph — used by [WeaponSlot] target acquisition. */
+    fun canBeTargetedBy(weaponType: WeaponType): Boolean = when (kind) {
+        EnemyKind.FLYER -> weaponType == WeaponType.ARCHER
+        EnemyKind.SHIELDED -> weaponType == WeaponType.CANNON
+        else -> true
+    }
 
     var health = maxHealth
     var rewardClaimed = false
@@ -76,6 +93,8 @@ class Zombie(
         EnemyKind.TANK -> 22f * 1.9f
         EnemyKind.WORM -> 22f * 1.15f
         EnemyKind.BOSS -> 22f * 3.2f
+        EnemyKind.FLYER -> 22f * 0.85f
+        EnemyKind.SHIELDED -> 22f * 1.3f
         EnemyKind.NORMAL -> 22f
     } * visualScale
 
@@ -109,6 +128,16 @@ class Zombie(
     private val wormBodyColor = Color.rgb(170, 85, 25)
     private val wormTailColor = Color.rgb(120, 55, 15)
     private val wormOutline = Color.rgb(65, 30, 10)
+
+    // Shielded-only: a slow pulsing phase for the energy-shield bubble's brightness, driven by
+    // walkPhase like everything else animated on this rig rather than its own clock.
+    private val isShielded = kind == EnemyKind.SHIELDED
+
+    // Flyer-only: hovers with a vertical bob instead of walking, so it needs its own local
+    // "altitude" offset applied on top of x/y (which stay at ground level for distance/targeting
+    // math) purely for the draw pass. bobPhase is offset per-instance so a group of flyers
+    // doesn't all bob in lockstep.
+    private val bobPhaseOffset = if (kind == EnemyKind.FLYER) Random(System.identityHashCode(this)).nextFloat() * (2f * Math.PI).toFloat() else 0f
 
     // Boss-only ("Galaxy Snail") state. galaxyPhase drives both the shell's slow spiral rotation
     // and its stars' twinkle, accumulated locally in update() since Zombie has no access to
@@ -286,6 +315,7 @@ class Zombie(
         when (kind) {
             EnemyKind.WORM -> drawWorm(canvas, paint)
             EnemyKind.BOSS -> drawSnail(canvas, paint)
+            EnemyKind.FLYER -> drawFlyer(canvas, paint)
             else -> drawHumanoid(canvas, paint)
         }
 
@@ -345,6 +375,21 @@ class Zombie(
         paint.color = Color.rgb(220, 30, 20)
         canvas.drawCircle(-headR * 0.4f, headCenterY - headR * 0.05f, headR * 0.16f, paint)
         canvas.drawCircle(headR * 0.4f, headCenterY - headR * 0.05f, headR * 0.16f, paint)
+
+        // An encasing energy-shield bubble, drawn last so it reads as surrounding the whole
+        // body — the visual cue that arrows bounce off it and only cannons get through (see
+        // canBeTargetedBy). Brightness pulses gently with walkPhase rather than a separate clock.
+        if (isShielded) {
+            val pulse = 0.7f + 0.3f * sin(walkPhase * 1.5f)
+            paint.shader = null
+            paint.style = Paint.Style.FILL
+            paint.color = Color.argb((35 * pulse).toInt(), 90, 190, 255)
+            canvas.drawCircle(0f, -radius * 0.15f, radius * 0.95f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2.5f * visualScale
+            paint.color = Color.argb((200 * pulse).toInt(), 130, 210, 255)
+            canvas.drawCircle(0f, -radius * 0.15f, radius * 0.95f, paint)
+        }
     }
 
     /**
@@ -496,6 +541,50 @@ class Zombie(
         paint.strokeWidth = 2.5f * visualScale
         paint.color = Color.rgb(70, 60, 110)
         canvas.drawCircle(0f, 0f, shellR, paint)
+    }
+
+    /**
+     * A small hovering alien flier — the visual cue for [canBeTargetedBy]'s archer-only rule.
+     * Bobs above its own ground shadow (drawn separately in [draw], unaffected by this function's
+     * local translate — the shadow stays pinned to the actual ground position while the body
+     * lifts above it) rather than tracking a real altitude the movement/targeting math needs to
+     * know about. Wings flutter on their own fast cycle, independent of walkPhase's ground-walk
+     * speed, so it still reads as airborne even while creeping forward slowly.
+     */
+    private fun drawFlyer(canvas: Canvas, paint: Paint) {
+        val bob = sin(walkPhase * 3f + bobPhaseOffset) * radius * 0.25f
+        canvas.save()
+        canvas.translate(0f, -radius * 0.4f + bob)
+        canvas.rotate(Math.toDegrees(facingAngle.toDouble()).toFloat())
+
+        val flutter = sin(walkPhase * 10f)
+        paint.style = Paint.Style.FILL
+        for (side in intArrayOf(-1, 1)) {
+            canvas.save()
+            canvas.rotate(side * (20f + flutter * 25f))
+            paint.color = Color.argb(150, 140, 200, 235)
+            val wingNear = side * radius * 0.1f
+            val wingFar = side * radius * 0.95f
+            canvas.drawOval(-radius * 0.15f, min(wingNear, wingFar), radius * 0.75f, max(wingNear, wingFar), paint)
+            canvas.restore()
+        }
+
+        // Ghostly translucent body core.
+        paint.color = Color.argb(200, 170, 130, 220)
+        canvas.drawOval(-radius * 0.55f, -radius * 0.4f, radius * 0.55f, radius * 0.4f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.8f * visualScale
+        paint.color = Color.argb(200, 90, 60, 140)
+        canvas.drawOval(-radius * 0.55f, -radius * 0.4f, radius * 0.55f, radius * 0.4f, paint)
+
+        // A single glowing eye, since it's a small alien creature rather than a humanoid.
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(255, 230, 90)
+        canvas.drawCircle(radius * 0.25f, 0f, radius * 0.16f, paint)
+        paint.color = Color.rgb(30, 20, 10)
+        canvas.drawCircle(radius * 0.3f, 0f, radius * 0.07f, paint)
+
+        canvas.restore()
     }
 
     /** Draws a filled, outlined rounded-rect "capsule" limb rotated about (originX, originY). */

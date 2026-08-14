@@ -700,6 +700,10 @@ class GameEngine {
 
     private fun applyImpact(p: Projectile) {
         if (p.kind == ProjectileKind.CANNONBALL) {
+            // Splash damage isn't filtered by canBeTargetedBy — a Flyer standing near the blast
+            // still catches it, since that's the explosion's physical radius, not a targeting
+            // lock (see Zombie's class doc). Shielded zombies are still cannon-vulnerable, so no
+            // filtering needed on that side either.
             explosions.add(Explosion(p.impactX, p.impactY, p.splashRadius, scale))
             for (z in zombies) {
                 if (z.isAlive() && GameMath.distance(z.x, z.y, p.impactX, p.impactY) <= p.splashRadius) {
@@ -707,10 +711,14 @@ class GameEngine {
                 }
             }
         } else {
+            // Unlike splash above, a stray arrow snapping to whichever zombie is nearest its
+            // impact point *is* filtered here — a Shielded zombie is meant to be immune to arrows
+            // outright (the shield blocks them, not just makes them hard to lock onto), so it must
+            // never be picked even if it's the closest thing to where the arrow landed.
             var closest: Zombie? = null
             var bestDist = 26f * scale
             for (z in zombies) {
-                if (!z.isAlive()) continue
+                if (!z.isAlive() || !z.canBeTargetedBy(WeaponType.ARCHER)) continue
                 val d = GameMath.distance(z.x, z.y, p.impactX, p.impactY)
                 if (d <= bestDist) {
                     bestDist = d
@@ -769,6 +777,8 @@ class GameEngine {
             EnemyKind.TANK -> 6
             EnemyKind.WORM -> 4
             EnemyKind.BOSS -> 10
+            EnemyKind.SHIELDED -> 5
+            EnemyKind.FLYER -> 3
             EnemyKind.NORMAL -> 3
         }
         val (blobX, blobY, blobRadius) = scatterBlobs(blobCount, zombie.radius, distFactor = 0.85f, radiusMin = 0.14f, radiusSpread = 0.22f)
@@ -911,7 +921,15 @@ class GameEngine {
         Ability.ORBITAL_STRIKE -> false
     }
 
-    /** Deals heavy splash damage centered on [x],[y] — [Hud] collects this point via a tap-to-target mode. */
+    /**
+     * Deals heavy splash damage centered on [x],[y] — [Hud] collects this point via a
+     * tap-to-target mode. Deliberately not filtered by [Zombie.canBeTargetedBy]: cannons/archers
+     * are the permanent, passive investment weapon-mix diversity is meant to matter for, while
+     * this (and EMP Freeze below) is a long-cooldown "break glass" tool that can reach any enemy
+     * kind — a player who built the wrong weapon mix should feel that pain in the sustained
+     * ticking of every wave, not be permanently walled out of ever touching a Flyer or Shielded
+     * zombie because they never bought the other weapon type.
+     */
     fun castOrbitalStrikeAt(x: Float, y: Float): Boolean {
         if (state != GameState.PLAYING || !orbitalStrikeUnlocked() || orbitalStrikeCooldown > 0f) return false
         orbitalStrikeCooldown = orbitalStrikeCooldownSec
@@ -926,6 +944,7 @@ class GameEngine {
         return true
     }
 
+    /** Also not filtered by canBeTargetedBy — see castOrbitalStrikeAt's doc for why. */
     private fun castEmpFreeze(): Boolean {
         if (state != GameState.PLAYING || !empFreezeUnlocked() || empFreezeCooldown > 0f) return false
         empFreezeCooldown = empFreezeCooldownSec
