@@ -211,17 +211,19 @@ class Hud {
         canvas.drawRect(0f, 0f, w, h, fillPaint)
 
         var rowGap = 14f * s
-        var headerHeight = 80f * s
+        var headerHeight = 84f * s
         var dividerGap = 32f * s
         // Deliberately much larger than rowGap so Start Wave reads as visually separated from
         // the upgrade rows above it instead of just being one more row in the same stack —
         // otherwise a tap meant for the last upgrade can land on Start Wave instead.
         var finalGap = 50f * s
 
-        val cardWidth = w * 0.92f
-        // Extra horizontal inset (beyond the card's own margin) so the grid reads as floating
-        // inside the card instead of stretched edge-to-edge across it.
-        val buttonMargin = 20f * s + cardWidth * 0.05f
+        // Wider than before (was 0.92f) and with a slimmer inset (was 20f*s + 5% of cardWidth) so
+        // the tile grid gets more actual width to work with -- tile/chip text below scales off
+        // that width, so a wider grid directly means bigger, more legible text, not just a bigger
+        // empty card.
+        val cardWidth = w * 0.95f
+        val buttonMargin = 14f * s + cardWidth * 0.025f
         val buttonWidth = cardWidth - buttonMargin * 2f
         // Three square tiles per row utilizes the popup's width far better than one thin
         // full-width bar per upgrade did -- Wall/Cannon/Archer share row 1, and (once unlocked)
@@ -235,8 +237,8 @@ class Hud {
         // GameEngine.toggleMutator's own guard — every later intermission skips this section
         // entirely rather than showing the now-locked-in choice as disabled chips.
         val showMutators = engine.waveManager.waveNumber == 1
-        var mutatorLabelHeight = 22f * s
-        var chipHeight = 66f * s
+        var mutatorLabelHeight = 24f * s
+        var chipHeight = 78f * s
         val mutatorSectionHeight = if (showMutators) mutatorLabelHeight + chipHeight + rowGap else 0f
 
         // Base row always shows; specializations add a divider label plus a second tile row
@@ -271,13 +273,13 @@ class Hud {
 
         drawCard(canvas, cardRect, s, Color.rgb(90, 78, 120))
 
-        textPaint.textSize = 23f * s
+        textPaint.textSize = 27f * s
         val title = if (engine.waveManager.waveNumber == 1) {
             "Prepare your defenses"
         } else {
             "Wave ${engine.waveManager.waveNumber - 1} cleared! +${engine.lastWaveGoldEarned}g"
         }
-        canvas.drawText(title, cardRect.centerX(), cardRect.top + 42f * s, textPaint)
+        canvas.drawText(title, cardRect.centerX(), cardRect.top + 44f * s, textPaint)
 
         // Warn before a boss wave — reaching the castle is an instant, fatal loss (see
         // Zombie's BOSS branch), so the player needs a clear cue to spend up before it starts.
@@ -289,7 +291,7 @@ class Hud {
             val prevColor = textPaint.color
             val prevSize = textPaint.textSize
             textPaint.color = Color.rgb(255, 90, 70)
-            textPaint.textSize = 13f * s
+            textPaint.textSize = 15f * s
             val bossName = bossVariantLabel(engine.waveManager.bossVariantForWave(engine.waveManager.waveNumber))
             canvas.drawText("⚠ BOSS WAVE — $bossName incoming", cardRect.centerX(), cardRect.top + headerHeight * 0.85f, textPaint)
             textPaint.color = prevColor
@@ -302,7 +304,7 @@ class Hud {
 
         if (showMutators) {
             textPaint.textAlign = Paint.Align.LEFT
-            textPaint.textSize = 14f * s
+            textPaint.textSize = 16f * s
             textPaint.color = Color.argb(190, 255, 255, 255)
             canvas.drawText("MUTATORS (optional, bonus Star Dust)", cardRect.left + buttonMargin, buttonTop + mutatorLabelHeight * 0.85f, textPaint)
             textPaint.color = Color.WHITE
@@ -348,7 +350,7 @@ class Hud {
 
         if (unlocked) {
             textPaint.textAlign = Paint.Align.LEFT
-            textPaint.textSize = 14f * s
+            textPaint.textSize = 16f * s
             textPaint.color = Color.argb(190, 255, 255, 255)
             canvas.drawText("SPECIALIZATIONS", cardRect.left + buttonMargin, buttonTop + dividerGap * 0.7f, textPaint)
             textPaint.color = Color.WHITE
@@ -392,8 +394,8 @@ class Hud {
         buttonTop += finalGap - rowGap
         startWaveButtonRect = RectF(cardRect.left + buttonMargin, buttonTop, cardRect.right - buttonMargin, buttonTop + tileHeight)
         drawBubbleBackground(canvas, startWaveButtonRect, Color.rgb(60, 140, 70))
-        textPaint.textSize = 21f * s
-        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 7f * s, textPaint)
+        textPaint.textSize = 24f * s
+        canvas.drawText("Start Wave ${engine.waveManager.waveNumber}", startWaveButtonRect.centerX(), startWaveButtonRect.centerY() + 8f * s, textPaint)
     }
 
     /** Display name for the upcoming boss wave's warning banner — see [GameEngine.abilityStatuses] for the equivalent ability-label pattern. */
@@ -470,27 +472,28 @@ class Hud {
         }
         drawBubbleBackground(canvas, rect, color, cornerRadius = 16f * scale)
 
-        // Text sizes track the tile's own width (275 is tileWidth's value at scale=1, i.e. the
-        // reference size these constants were tuned against) rather than [scale] directly. Unlike
-        // the ability bar's fixed-size tiles, tileWidth here is a fraction of the actual card
-        // width and can shrink much faster than [scale] does (scale floors at 0.55 while a narrow
-        // split-screen window keeps shrinking tileWidth toward 0) -- sizing off [scale] alone let
-        // subtitle text overflow a tile that had shrunk well past what [scale] implied.
-        val tileScale = tileWidth / 275f
+        // Text sizes track the tile's own width (306 is tileWidth's value at scale=1 with the
+        // popup's current 0.95f-card-width/2.5%-margin layout, i.e. the reference size these
+        // constants were tuned against) rather than [scale] directly. Unlike the ability bar's
+        // fixed-size tiles, tileWidth here is a fraction of the actual card width and can shrink
+        // much faster than [scale] does (scale floors at 0.55 while a narrow split-screen window
+        // keeps shrinking tileWidth toward 0) -- sizing off [scale] alone let subtitle text
+        // overflow a tile that had shrunk well past what [scale] implied.
+        val tileScale = tileWidth / 306f
 
-        textPaint.textSize = 16f * tileScale
+        textPaint.textSize = 20f * tileScale
         textPaint.color = Color.WHITE
         canvas.drawText(name, rect.centerX(), rect.top + rect.height() * 0.24f, textPaint)
 
-        textPaint.textSize = 12f * tileScale
+        textPaint.textSize = 15f * tileScale
         textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.40f, textPaint)
-        canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.58f, textPaint)
+        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.41f, textPaint)
+        canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.59f, textPaint)
 
-        textPaint.textSize = 17f * tileScale
+        textPaint.textSize = 21f * tileScale
         textPaint.color = Color.WHITE
         val costLabel = costLabelOverride ?: cost?.let { "${it}g" } ?: "MAX"
-        canvas.drawText(costLabel, rect.centerX(), rect.top + rect.height() * 0.84f, textPaint)
+        canvas.drawText(costLabel, rect.centerX(), rect.top + rect.height() * 0.85f, textPaint)
 
         return rect
     }
@@ -499,25 +502,25 @@ class Hud {
      * A toggleable mutator chip — name, a short effect description, and its Star Dust bonus,
      * highlighted red when [active] so the player can see what they're opting into before a run
      * starts rather than only discovering it mid-run. Text sizing follows the same
-     * tileWidth-derived-scale approach as [drawUpgradeTile] (203 is a chip's width at scale=1 on
-     * this popup's reference card width, with 4 mutators sharing the row) rather than [scale]
-     * directly, for the same narrow-split-screen overflow reason.
+     * tileWidth-derived-scale approach as [drawUpgradeTile] (226 is a chip's width at scale=1 on
+     * this popup's current reference card width, with 4 mutators sharing the row) rather than
+     * [scale] directly, for the same narrow-split-screen overflow reason.
      */
     private fun drawMutatorChip(canvas: Canvas, left: Float, top: Float, chipWidth: Float, chipHeight: Float, mutator: Mutator, active: Boolean, scale: Float): RectF {
         val rect = RectF(left, top, left + chipWidth, top + chipHeight)
         val color = if (active) Color.rgb(175, 60, 55) else Color.rgb(60, 54, 74)
         drawBubbleBackground(canvas, rect, color, cornerRadius = 12f * scale)
 
-        val chipScale = chipWidth / 203f
-        textPaint.textSize = 13f * chipScale
+        val chipScale = chipWidth / 226f
+        textPaint.textSize = 16f * chipScale
         textPaint.color = Color.WHITE
         canvas.drawText(mutator.label, rect.centerX(), rect.top + rect.height() * 0.30f, textPaint)
 
-        textPaint.textSize = 9.5f * chipScale
+        textPaint.textSize = 12f * chipScale
         textPaint.color = Color.argb(210, 255, 255, 255)
         canvas.drawText(mutator.description, rect.centerX(), rect.top + rect.height() * 0.54f, textPaint)
 
-        textPaint.textSize = 11f * chipScale
+        textPaint.textSize = 14f * chipScale
         textPaint.color = Color.WHITE
         canvas.drawText("+${mutator.starDustBonusPercent}% Star Dust", rect.centerX(), rect.top + rect.height() * 0.82f, textPaint)
 
