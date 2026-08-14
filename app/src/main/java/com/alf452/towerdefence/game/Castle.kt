@@ -12,8 +12,9 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * The medieval keep the player defends. Shield (from wall upgrades) absorbs
- * damage before health does, and regenerates after a few seconds without a hit.
+ * The medieval keep the player defends, with a round tower at each of its four corners. Shield
+ * (from wall upgrades) absorbs damage before health does, and regenerates after a few seconds
+ * without a hit.
  *
  * Rendering fakes a 3D, textured look within this 2D Canvas engine (no OpenGL/3D pipeline here)
  * via two combined tricks, applied to every stone surface: a procedurally-generated stone
@@ -23,20 +24,20 @@ import kotlin.math.sin
  * volume seen from above; the top-lit/bottom-shadowed *linear* gradient this used to be reads as
  * a wall's face lit from the side, which looked like the castle had been tipped on its edge. For
  * the same reason, turrets are drawn as concentric circles (an outer stone rim plus a smaller
- * roof-cap circle) rather than a tall rect with a peaked roof above it — a round tower's actual
- * footprint from directly above, not an elevation silhouette. Small repeated elements (wall
- * merlons) get a cheaper version — texture fill plus a flat highlight/shadow line on their
- * top/bottom edges — since a per-block repositioned gradient isn't worth the complexity at that size.
+ * green tiled-shingle roof-cap circle) rather than a tall rect with a peaked roof above it — a
+ * round tower's actual footprint from directly above, not an elevation silhouette. Small repeated
+ * elements (wall merlons) get a cheaper version — texture fill plus a flat highlight/shadow line
+ * on their top/bottom edges — since a per-block repositioned gradient isn't worth the complexity
+ * at that size.
  */
 class Castle(var x: Float, var y: Float) {
 
     companion object {
-        // Turret placement/size, relative to radius — shared between draw()'s drawTurret() calls
+        // Turret size, relative to castle radius — shared between draw()'s drawTurret() calls
         // and buildTurretLighting() below so the cached gradient's bounds can't drift out of sync
-        // with the shape it's overlaid on.
-        private const val TURRET_OFFSET_FACTOR = 0.85f
-        private const val TURRET_CY_FACTOR = 0.3f
-        private const val TURRET_RADIUS_FACTOR = 0.4f
+        // with the shape it's overlaid on. Turrets themselves sit at the keep rect's four corners
+        // (computed in draw() from the keep RectF, not a fixed radius-relative offset).
+        private const val TURRET_RADIUS_FACTOR = 0.3f
         // Roof cap size, relative to the turret's own radius — concentric with the turret's outer
         // rim (see drawTurret()) — shared with buildRoofLighting() for the same reason as above.
         private const val ROOF_RADIUS_FACTOR = 0.62f
@@ -74,6 +75,7 @@ class Castle(var x: Float, var y: Float) {
     // properties' own just-initialized default values) rather than hand-duplicated literals, so
     // the very first frame drawn can't silently drift from every frame after the first resize.
     private var stoneShader: Shader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
+    private var roofTileShader: Shader = TextureFactory.shaderFor(TextureFactory.tile, visualScale)
     private var keepLighting: Shader = buildKeepLighting(radius)
     private var turretLighting: Shader = buildTurretLighting(radius)
     private var roofLighting: Shader = buildRoofLighting(radius)
@@ -155,6 +157,7 @@ class Castle(var x: Float, var y: Float) {
         radius = newRadius
         visualScale = newScale
         stoneShader = TextureFactory.shaderFor(TextureFactory.stone, visualScale)
+        roofTileShader = TextureFactory.shaderFor(TextureFactory.tile, visualScale)
         keepLighting = buildKeepLighting(radius)
         turretLighting = buildTurretLighting(radius)
         roofLighting = buildRoofLighting(radius)
@@ -178,7 +181,7 @@ class Castle(var x: Float, var y: Float) {
     private fun buildRoofLighting(r: Float): Shader {
         val tr = r * TURRET_RADIUS_FACTOR
         val roofR = tr * ROOF_RADIUS_FACTOR
-        return RadialGradient(0f, 0f, roofR * 1.1f, Color.argb(130, 255, 220, 190), Color.argb(120, 40, 15, 12), Shader.TileMode.CLAMP)
+        return RadialGradient(0f, 0f, roofR * 1.1f, Color.argb(120, 210, 255, 220), Color.argb(120, 8, 40, 20), Shader.TileMode.CLAMP)
     }
 
     /** A flat damage-flash tint, drawn as a final pass over a shape instead of blending it into a cached shader/texture. */
@@ -252,14 +255,6 @@ class Castle(var x: Float, var y: Float) {
             drawBlock(canvas, paint, px - 6f * visualScale, py - 8f * visualScale, px + 6f * visualScale, py + 2f * visualScale)
         }
 
-        // Flanking corner turrets with conical roofs, drawn before the keep — the keep's own
-        // straight vertical edge (below) then paints cleanly over the small sliver where the two
-        // shapes overlap, instead of the turret's round rim breaking the keep's edge line.
-        val turretCy = radius * TURRET_CY_FACTOR
-        val turretR = radius * TURRET_RADIUS_FACTOR
-        drawTurret(canvas, paint, -radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
-        drawTurret(canvas, paint, radius * TURRET_OFFSET_FACTOR, turretCy, turretR, sw)
-
         // Keep roof: stone texture, then a radial center-lit overlay so it reads as a raised,
         // sunlit volume seen from above rather than a flat rect. No coursing lines or door here —
         // both are wall-face details that would only be visible from the side, and a door in
@@ -272,14 +267,25 @@ class Castle(var x: Float, var y: Float) {
         paint.color = Color.rgb(90, 80, 65)
         canvas.drawRoundRect(keep, 4f * visualScale, 4f * visualScale, paint)
 
-        // Crenellations on the top and bottom edges — merlons on only the top edge would read as
-        // "the top of a wall facing the camera," so the bottom edge gets a matching row too. Left
-        // and right are skipped: that's exactly where the flanking turrets sit, so a wall-top
-        // battlement there would geometrically collide with the turrets' round footprint, and the
-        // turrets' own stone rim already reads as a wall edge on those sides anyway.
+        // Crenellations wrap all four rooftop edges — merlons on only the top edge would read as
+        // "the top of a wall facing the camera," so every edge gets a matching row. Each row stops
+        // short of the corners by turretMargin so the teeth don't run into the corner towers
+        // (drawn afterward, below) rather than overlapping them.
         val toothSpan = keep.width() / 10f
-        drawEdgeTeeth(canvas, paint, keep.left, keep.right, keep.top, -1f, toothSpan, horizontal = true)
-        drawEdgeTeeth(canvas, paint, keep.left, keep.right, keep.bottom, 1f, toothSpan, horizontal = true)
+        val turretR = radius * TURRET_RADIUS_FACTOR
+        val turretMargin = turretR * 1.1f
+        drawEdgeTeeth(canvas, paint, keep.left + turretMargin, keep.right - turretMargin, keep.top, -1f, toothSpan, horizontal = true)
+        drawEdgeTeeth(canvas, paint, keep.left + turretMargin, keep.right - turretMargin, keep.bottom, 1f, toothSpan, horizontal = true)
+        drawEdgeTeeth(canvas, paint, keep.top + turretMargin, keep.bottom - turretMargin, keep.left, -1f, toothSpan, horizontal = false)
+        drawEdgeTeeth(canvas, paint, keep.top + turretMargin, keep.bottom - turretMargin, keep.right, 1f, toothSpan, horizontal = false)
+
+        // Corner towers, drawn last so each one's clean round rim fully caps its corner instead of
+        // the keep's straight edges/merlons cutting a chord across it — real corner towers replace
+        // the wall's corner outright rather than poking out from behind it.
+        drawTurret(canvas, paint, keep.left, keep.top, turretR, sw)
+        drawTurret(canvas, paint, keep.right, keep.top, turretR, sw)
+        drawTurret(canvas, paint, keep.left, keep.bottom, turretR, sw)
+        drawTurret(canvas, paint, keep.right, keep.bottom, turretR, sw)
 
         // Flag, anchored just above the top edge's own merlon row.
         val flagBaseY = keep.top - toothSpan
@@ -315,13 +321,13 @@ class Castle(var x: Float, var y: Float) {
 
     /**
      * One edge's row of crenellation teeth ([drawBlock]s), each [toothSpan] wide, projecting
-     * outward from the keep rect along [edgeCoord] by [sign] (-1 for the top edge, +1 for bottom,
-     * so each edge's teeth point away from the rect's own interior). [horizontal] distinguishes a
-     * left-right edge (top/bottom, teeth offset in Y) from a top-bottom edge (left/right, teeth
-     * offset in X) — currently only called for the former (see [draw]), but kept general since the
-     * math is identical either way. [toothSpan] is a shared caller-supplied size rather than being
-     * derived from this edge's own axis length, so a future caller adding another non-square edge
-     * gets teeth sized consistently with the rest of the border instead of silently mismatched.
+     * outward from the keep rect along [edgeCoord] by [sign] (-1 for the top/left edges, +1 for
+     * bottom/right, so each edge's teeth point away from the rect's own interior). [horizontal]
+     * distinguishes a left-right edge (top/bottom, teeth offset in Y) from a top-bottom edge
+     * (left/right, teeth offset in X) — [draw] calls this for all four edges of the keep rect.
+     * [toothSpan] is a shared caller-supplied size rather than being derived from this edge's own
+     * axis length, so all four edges get teeth sized consistently with each other instead of the
+     * taller left/right edges ending up with visibly larger merlons than top/bottom.
      */
     private fun drawEdgeTeeth(canvas: Canvas, paint: Paint, axisStart: Float, axisEnd: Float, edgeCoord: Float, sign: Float, toothSpan: Float, horizontal: Boolean) {
         val depth = sign * toothSpan
@@ -336,14 +342,14 @@ class Castle(var x: Float, var y: Float) {
     }
 
     /**
-     * A round tower, drawn as two concentric circles — an outer stone rim (the tower's wall
-     * thickness) and a smaller roof-cap circle (the coned roof's apex) — rather than a tall rect
-     * with a peaked roof above it, so it reads as a tower's actual footprint seen from directly
-     * above instead of an elevation silhouette. Drawn in its own local space (translated by
-     * [cx],[cy], not baked into the shape coordinates) so the cached [turretLighting]/[roofLighting]
-     * radial gradients — centered at local (0,0) — are valid for both the left and right turret
-     * from one shared instance each, the same trick a [TextureFactory] shader gets "for free"
-     * since a repeating tile looks the same at any offset.
+     * A round corner tower, drawn as two concentric circles — an outer stone rim (the tower's
+     * wall thickness) and a smaller green tiled-shingle roof-cap circle (the coned roof's apex) —
+     * rather than a tall rect with a peaked roof above it, so it reads as a tower's actual
+     * footprint seen from directly above instead of an elevation silhouette. Drawn in its own
+     * local space (translated by [cx],[cy], not baked into the shape coordinates) so the cached
+     * [turretLighting]/[roofLighting] radial gradients — centered at local (0,0) — are valid for
+     * all four corner towers from one shared instance each, the same trick a [TextureFactory]
+     * shader gets "for free" since a repeating tile looks the same at any offset.
      *
      * Hand-rolled fill/lighting/tint sequence rather than routed through [drawTexturedSurface]
      * (which only draws rects) — generalizing that helper to arbitrary shapes would mean passing
@@ -372,7 +378,7 @@ class Castle(var x: Float, var y: Float) {
 
         val roofR = r * ROOF_RADIUS_FACTOR
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(120, 50, 46)
+        paint.shader = roofTileShader
         canvas.drawCircle(0f, 0f, roofR, paint)
         paint.shader = roofLighting
         canvas.drawCircle(0f, 0f, roofR, paint)
@@ -383,7 +389,7 @@ class Castle(var x: Float, var y: Float) {
         }
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = sw * 0.7f
-        paint.color = Color.rgb(55, 22, 19)
+        paint.color = Color.rgb(16, 42, 26)
         canvas.drawCircle(0f, 0f, roofR, paint)
 
         canvas.restore()
