@@ -72,12 +72,15 @@ class WeaponSlot(val type: WeaponType, val angleDeg: Float) {
         return GameMath.pointOnCircle(castle.x, castle.y, ringRadius, rad)
     }
 
-    fun update(dt: Float, castle: Castle, ringRadius: Float, zombies: List<Zombie>, onFire: (WeaponSlot, Zombie, Float, Float) -> Unit) {
+    fun update(dt: Float, castle: Castle, ringRadius: Float, zombies: List<Zombie>, fireRateMultiplier: Float, onFire: (WeaponSlot, Zombie, Float, Float) -> Unit) {
         if (!unlocked) return
         recoil = max(0f, recoil - dt * 4f)
         muzzleFlash = max(0f, muzzleFlash - dt * 6f)
         drawBack = max(0f, drawBack - dt * 3f)
-        cooldown -= dt
+        // Overcharge (see GameEngine's overchargeFireRateMultiplier) counts cooldown down faster
+        // rather than shrinking fireIntervalSec itself, so the buff cleanly reverts to the
+        // slot's normal rate the instant it expires with no stat recompute needed.
+        cooldown -= dt * fireRateMultiplier
 
         val pos = ringPosition(castle, ringRadius)
         var target: Zombie? = null

@@ -4,9 +4,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import com.alf452.towerdefence.game.Ability
 import com.alf452.towerdefence.game.GameEngine
 import com.alf452.towerdefence.game.GameMath
 import com.alf452.towerdefence.game.GameState
+import kotlin.math.ceil
 
 /**
  * Draws the health/shield bars, gold/wave readout, the between-wave upgrade
@@ -30,12 +32,29 @@ class Hud {
     private var startWaveButtonRect = RectF()
     private var restartButtonRect = RectF()
 
+    // The health/shield bars + gold/wave chips, recomputed by drawTopBars() every frame like
+    // every other rect in this class. Excluded from Orbital Strike's targeting tap below so
+    // glancing at your gold/HP mid-targeting can't be misread as "fire here" and burn the
+    // ability's cooldown on an empty patch of HUD chrome.
+    private var topBarsRect = RectF()
+
+    // Ability bar state (only relevant during GameState.PLAYING — see drawAbilityBar/handleTouch).
+    // abilityButtonRects is rebuilt every draw() call, same "compute rect on draw, hit-test on
+    // touch" pattern as the upgrade popup's buttons above.
+    private var abilityButtonRects: Map<Ability, RectF> = emptyMap()
+    // Set the instant the player taps an ability that needs a battlefield point (currently only
+    // Orbital Strike); the *next* tap either cancels (if it lands back on that ability's own
+    // button) or fires the ability at that tap's location. Cleared whenever the game isn't
+    // PLAYING (see draw() below) so a stale targeting mode can't survive into a later wave.
+    private var targetingAbility: Ability? = null
+
     fun draw(canvas: Canvas, engine: GameEngine) {
+        if (engine.state != GameState.PLAYING) targetingAbility = null
         drawTopBars(canvas, engine)
         when (engine.state) {
             GameState.INTERMISSION -> drawUpgradePopup(canvas, engine)
             GameState.GAME_OVER -> drawGameOverPopup(canvas, engine)
-            GameState.PLAYING -> {}
+            GameState.PLAYING -> drawAbilityBar(canvas, engine)
         }
     }
 
@@ -89,6 +108,8 @@ class Hud {
         val goldText = "Gold: ${engine.gold}"
         val goldChipWidth = textPaint.measureText(goldText) + 28f * s
         drawChip(canvas, w - margin - goldChipWidth, top, goldChipWidth, chipHeight, goldText)
+
+        topBarsRect = RectF(0f, 0f, w, top + chipHeight)
     }
 
     private fun drawChip(canvas: Canvas, left: Float, top: Float, width: Float, height: Float, text: String) {
@@ -98,6 +119,75 @@ class Hud {
         canvas.drawRoundRect(rect, height / 2f, height / 2f, fillPaint)
         textPaint.textAlign = Paint.Align.CENTER
         canvas.drawText(text, rect.centerX(), rect.centerY() + textPaint.textSize * 0.35f, textPaint)
+    }
+
+    /**
+     * A row of ability buttons centered along the bottom edge, one per currently-unlocked
+     * [Ability] (see [GameEngine.abilityStatuses]) — locked abilities simply don't occupy a slot
+     * yet, rather than showing as a disabled placeholder, so the bar grows as the run progresses
+     * instead of spoiling how many abilities exist. A ready button shows its own accent color and
+     * "Ready" (or "Tap target" while [targetingAbility] points at it); one on cooldown dims to
+     * gray and shows a rounded-up seconds countdown instead.
+     */
+    private fun drawAbilityBar(canvas: Canvas, engine: GameEngine) {
+        val s = engine.scale
+        val w = engine.screenW
+        val h = engine.screenH
+        val statuses = engine.abilityStatuses().filter { it.unlocked }
+        if (statuses.isEmpty()) {
+            abilityButtonRects = emptyMap()
+            return
+        }
+
+        val buttonWidth = 104f * s
+        val buttonHeight = 58f * s
+        val gap = 12f * s
+        val totalWidth = statuses.size * buttonWidth + (statuses.size - 1) * gap
+        var left = (w - totalWidth) / 2f
+        val top = h - buttonHeight - 24f * s
+
+        val rects = mutableMapOf<Ability, RectF>()
+        for (status in statuses) {
+            val rect = RectF(left, top, left + buttonWidth, top + buttonHeight)
+            val ready = status.cooldownRemaining <= 0f
+            val targeting = targetingAbility == status.ability
+            val baseColor = when (status.ability) {
+                Ability.ORBITAL_STRIKE -> Color.rgb(70, 110, 170)
+                Ability.EMP_FREEZE -> Color.rgb(50, 140, 150)
+                Ability.OVERCHARGE -> Color.rgb(170, 125, 40)
+            }
+            val color = when {
+                targeting -> Color.rgb(215, 195, 90)
+                ready -> baseColor
+                else -> Color.rgb(50, 48, 58)
+            }
+            drawBubbleBackground(canvas, rect, color)
+
+            // A dark overlay shrinking from the top down as the cooldown finishes, so progress
+            // reads at a glance instead of only via the seconds-remaining text below.
+            if (!ready && !targeting) {
+                val cooldownFrac = GameMath.clamp(status.cooldownRemaining / status.cooldownTotal, 0f, 1f)
+                fillPaint.style = Paint.Style.FILL
+                fillPaint.color = Color.argb(140, 0, 0, 0)
+                canvas.drawRect(rect.left, rect.top, rect.right, rect.top + rect.height() * cooldownFrac, fillPaint)
+            }
+
+            textPaint.textSize = 12f * s
+            textPaint.color = Color.WHITE
+            canvas.drawText(status.label, rect.centerX(), rect.top + 21f * s, textPaint)
+
+            textPaint.textSize = 15f * s
+            val subLabel = when {
+                targeting -> "Tap target"
+                ready -> "Ready"
+                else -> "${ceil(status.cooldownRemaining).toInt()}s"
+            }
+            canvas.drawText(subLabel, rect.centerX(), rect.top + 42f * s, textPaint)
+
+            rects[status.ability] = rect
+            left += buttonWidth + gap
+        }
+        abilityButtonRects = rects
     }
 
     private fun drawUpgradePopup(canvas: Canvas, engine: GameEngine) {
@@ -371,7 +461,44 @@ class Hud {
             GameState.GAME_OVER -> {
                 if (restartButtonRect.contains(x, y)) engine.restart()
             }
-            GameState.PLAYING -> {}
+            GameState.PLAYING -> handlePlayingTouch(x, y, engine)
+        }
+    }
+
+    /**
+     * While [targetingAbility] is set (only ever Orbital Strike today): a tap on [topBarsRect]
+     * (glancing at HP/gold) is ignored outright, a tap on *any* ability button — not just the
+     * targeting ability's own — cancels targeting instead of being misread as "fire here" (and
+     * for a different ability's button, falls through to the normal dispatch below so the tap
+     * still does something useful rather than being silently swallowed), and anything else fires
+     * the ability at the tapped point. Otherwise, a tap on a ready, unlocked ability button either
+     * casts it immediately (instant abilities) or enters targeting mode (abilities with
+     * requiresTarget).
+     */
+    private fun handlePlayingTouch(x: Float, y: Float, engine: GameEngine) {
+        val targeting = targetingAbility
+        if (targeting != null) {
+            if (topBarsRect.contains(x, y)) return
+            val tappedButton = abilityButtonRects.entries.firstOrNull { it.value.contains(x, y) }?.key
+            if (tappedButton != null) {
+                targetingAbility = null
+                if (tappedButton == targeting) return
+                // A different ability's button — cancel targeting and fall through to dispatch
+                // that tap normally below instead of dropping it.
+            } else {
+                engine.castOrbitalStrikeAt(x, y)
+                targetingAbility = null
+                return
+            }
+        }
+
+        for ((ability, rect) in abilityButtonRects) {
+            if (!rect.contains(x, y)) continue
+            val status = engine.abilityStatuses().first { it.ability == ability }
+            if (status.unlocked && status.cooldownRemaining <= 0f) {
+                if (status.requiresTarget) targetingAbility = ability else engine.castAbility(ability)
+            }
+            return
         }
     }
 }

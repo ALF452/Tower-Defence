@@ -36,6 +36,9 @@ class SoundEngine(context: Context, initialVolume: Float = 1f) {
         private const val BOW_VOLUME = 0.315f
         private const val ZOMBIE_DEATH_VOLUME = 0.385f
         private const val CASTLE_HIT_VOLUME = 0.455f
+        private const val ORBITAL_STRIKE_VOLUME = 0.49f
+        private const val EMP_FREEZE_VOLUME = 0.42f
+        private const val OVERCHARGE_VOLUME = 0.42f
         private const val MUSIC_VOLUME = 0.245f
     }
 
@@ -105,6 +108,9 @@ class SoundEngine(context: Context, initialVolume: Float = 1f) {
     private val bowSoundId = soundPool.load(appContext, R.raw.bow_shoot, 1)
     private val zombieDeathSoundId = soundPool.load(appContext, R.raw.zombie_death, 1)
     private val castleHitSoundId = soundPool.load(appContext, R.raw.castle_hit, 1)
+    private val orbitalStrikeSoundId = soundPool.load(appContext, R.raw.orbital_strike, 1)
+    private val empFreezeSoundId = soundPool.load(appContext, R.raw.emp_freeze, 1)
+    private val overchargeSoundId = soundPool.load(appContext, R.raw.overcharge, 1)
 
     init {
         musicSoundId = soundPool.load(appContext, R.raw.bg_music, 1)
@@ -131,6 +137,18 @@ class SoundEngine(context: Context, initialVolume: Float = 1f) {
 
     fun playCastleHit() {
         playIfLoaded(castleHitSoundId, CASTLE_HIT_VOLUME)
+    }
+
+    fun playOrbitalStrike() {
+        playIfLoaded(orbitalStrikeSoundId, ORBITAL_STRIKE_VOLUME)
+    }
+
+    fun playEmpFreeze() {
+        playIfLoaded(empFreezeSoundId, EMP_FREEZE_VOLUME)
+    }
+
+    fun playOvercharge() {
+        playIfLoaded(overchargeSoundId, OVERCHARGE_VOLUME)
     }
 
     /**

@@ -9,12 +9,31 @@ import android.graphics.Shader
 import com.alf452.towerdefence.ui.Hud
 import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
 enum class GameState { INTERMISSION, PLAYING, GAME_OVER }
+
+/** A player-cast active ability — see the cast*() methods and [GameEngine.abilityStatuses]. */
+enum class Ability { ORBITAL_STRIKE, EMP_FREEZE, OVERCHARGE }
+
+/**
+ * A snapshot of one ability's current UI state, rebuilt fresh each call to
+ * [GameEngine.abilityStatuses] rather than cached — [Hud] reads this to draw the ability bar and
+ * decide what a tap on it should do, without needing to know each ability's individual cooldown
+ * field or unlock-wave threshold itself.
+ */
+data class AbilityStatus(
+    val ability: Ability,
+    val label: String,
+    val unlocked: Boolean,
+    val cooldownRemaining: Float,
+    val cooldownTotal: Float,
+    val requiresTarget: Boolean
+)
 
 /**
  * A jagged (not perfectly round) impact crater: [floorPath] is the ragged crater rim/floor
@@ -39,6 +58,63 @@ private class BloodSplatter(val x: Float, val y: Float, val blobX: FloatArray, v
  * trail of "still burning" ground, not a permanent stain.
  */
 private class SnailFlame(val x: Float, val y: Float, var age: Float, val blobX: FloatArray, val blobY: FloatArray, val blobRadius: FloatArray)
+
+/**
+ * The Orbital Strike ability's impact visual at the player-chosen target point: a fast bright
+ * flash (the "beam landing") for the first fraction of its lifetime, plus a cyan shockwave ring
+ * expanding out to [maxRadius] over its whole lifetime — deliberately colored/paced differently
+ * from [Explosion] (cannon-orange, 0.35s) so it reads as a distinct, bigger event.
+ */
+/**
+ * Shared age/lifetime bookkeeping for [OrbitalStrikeEffect] and [EmpPulse]'s short one-shot
+ * visuals — [Explosion] (a separate, pre-existing file) has its own copy of the same small
+ * pattern; it's left as-is rather than folded into this base too, since that would turn an
+ * unrelated file's class into a shared-base subclass as a side effect of this change.
+ */
+private open class TimedEffect(protected val ttl: Float) {
+    protected var age = 0f
+        private set
+    val alive: Boolean get() = age < ttl
+    fun update(dt: Float) {
+        age += dt
+    }
+}
+
+private class OrbitalStrikeEffect(val x: Float, val y: Float, val maxRadius: Float, private val visualScale: Float) : TimedEffect(0.5f) {
+    private val flashDurationSec = 0.15f
+
+    fun draw(canvas: Canvas, paint: Paint) {
+        paint.shader = null
+        val flashT = GameMath.clamp(age / flashDurationSec, 0f, 1f)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(((1f - flashT) * 220).toInt(), 235, 250, 255)
+        canvas.drawCircle(x, y, maxRadius * 0.5f, paint)
+
+        val t = GameMath.clamp(age / ttl, 0f, 1f)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4f * visualScale
+        paint.color = Color.argb(((1f - t) * 210).toInt(), 130, 220, 255)
+        canvas.drawCircle(x, y, maxRadius * (0.25f + 0.75f * t), paint)
+    }
+}
+
+/**
+ * The EMP Freeze ability's visual: a single blue ring pulsing outward from the castle to the
+ * arena's edge, fading as it goes — same "expanding ring" shape as [OrbitalStrikeEffect] but
+ * centered on the castle (since EMP Freeze hits every zombie on the field, not one target point)
+ * and colored to match the icy blue slow-status tint already used elsewhere ([Zombie]'s status
+ * icon, the archer Slow specialization).
+ */
+private class EmpPulse(val cx: Float, val cy: Float, val maxRadius: Float, private val visualScale: Float) : TimedEffect(0.5f) {
+    fun draw(canvas: Canvas, paint: Paint) {
+        val t = GameMath.clamp(age / ttl, 0f, 1f)
+        paint.shader = null
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f * visualScale
+        paint.color = Color.argb(((1f - t) * 200).toInt(), 90, 190, 255)
+        canvas.drawCircle(cx, cy, maxRadius * t, paint)
+    }
+}
 
 /**
  * A tumbling rock drifting left-to-right across the space backdrop, wrapping back to the left
@@ -106,6 +182,40 @@ class GameEngine {
     private val snailFlames = mutableListOf<SnailFlame>()
     private val maxSnailFlames = 220
     private val snailFlameTtlSec = 0.8f
+
+    // Active player abilities. Each unlocks on its own wave (staggered like the enemy-kind
+    // debuts in WaveManager, so the player isn't handed all three at once) and is gated purely
+    // by its own cooldown timer — no gold cost, unlike the upgrades below, since these are meant
+    // to be a moment-to-moment combat decision rather than another economy sink. Cooldowns tick
+    // down in every state (including INTERMISSION), not just PLAYING, so an ability used near the
+    // end of one wave has a head start recharging for the next rather than being paused.
+    private val orbitalStrikeUnlockWave = 1
+    private val empFreezeUnlockWave = 5
+    private val overchargeUnlockWave = 8
+    private val orbitalStrikeCooldownSec = 20f
+    private val empFreezeCooldownSec = 25f
+    private val overchargeCooldownSec = 30f
+    private val overchargeDurationSec = 6f
+    private val orbitalStrikeDamage = 260f
+    private val orbitalStrikeRadiusFactor = 90f
+    private val empFreezeSlowFactor = 0.04f
+    private val empFreezeDurationSec = 3f
+    // How much faster every cannon/archer fires while Overcharge is active — applied as a
+    // multiplier on WeaponSlot's own per-frame cooldown countdown, not a stat recompute, so it
+    // cleanly reverts the instant the buff timer runs out.
+    private val overchargeFireRateMultiplier = 2f
+
+    private var orbitalStrikeCooldown = 0f
+    private var empFreezeCooldown = 0f
+    private var overchargeCooldown = 0f
+    private var overchargeTimer = 0f
+
+    private val orbitalStrikes = mutableListOf<OrbitalStrikeEffect>()
+    private val empPulses = mutableListOf<EmpPulse>()
+
+    var onOrbitalStrike: (() -> Unit)? = null
+    var onEmpFreeze: (() -> Unit)? = null
+    var onOvercharge: (() -> Unit)? = null
 
     // Cannon slots unlock in this order: N, E, S, W.
     val cannonSlots = listOf(
@@ -466,6 +576,21 @@ class GameEngine {
         for (f in snailFlames) f.age += dt
         snailFlames.removeAll { it.age >= snailFlameTtlSec }
 
+        // Ability cooldowns tick down regardless of state (see the class doc above their fields)
+        // so they keep recharging through the upgrade screen between waves. overchargeTimer is
+        // different — it's not a gate but the remaining duration of an *active* buff that only
+        // does anything while weapons are actually firing (updateWaveLogic, PLAYING-only), so it
+        // only counts down then too; otherwise a wave clearing moments after casting it would
+        // burn the whole buff duration sitting in the upgrade shop for nothing.
+        if (orbitalStrikeCooldown > 0f) orbitalStrikeCooldown = max(0f, orbitalStrikeCooldown - dt)
+        if (empFreezeCooldown > 0f) empFreezeCooldown = max(0f, empFreezeCooldown - dt)
+        if (overchargeCooldown > 0f) overchargeCooldown = max(0f, overchargeCooldown - dt)
+        if (overchargeTimer > 0f && state == GameState.PLAYING) overchargeTimer = max(0f, overchargeTimer - dt)
+        for (o in orbitalStrikes) o.update(dt)
+        orbitalStrikes.removeAll { !it.alive }
+        for (p in empPulses) p.update(dt)
+        empPulses.removeAll { !it.alive }
+
         val projIter = projectiles.iterator()
         while (projIter.hasNext()) {
             val p = projIter.next()
@@ -515,11 +640,12 @@ class GameEngine {
         waveManager.update(dt, arenaRadius(), castle.x, castle.y, scale)?.let { zombies.add(it) }
 
         val ring = ringRadius()
+        val fireRateMultiplier = if (overchargeTimer > 0f) overchargeFireRateMultiplier else 1f
         for (slot in cannonSlots) {
-            slot.update(dt, castle, ring, zombies) { s, target, fx, fy -> fire(s, target, fx, fy) }
+            slot.update(dt, castle, ring, zombies, fireRateMultiplier) { s, target, fx, fy -> fire(s, target, fx, fy) }
         }
         for (slot in archerSlots) {
-            slot.update(dt, castle, ring, zombies) { s, target, fx, fy -> fire(s, target, fx, fy) }
+            slot.update(dt, castle, ring, zombies, fireRateMultiplier) { s, target, fx, fy -> fire(s, target, fx, fy) }
         }
 
         // castle.isDestroyed() is checked here too, not just after this function returns: the
@@ -666,6 +792,12 @@ class GameEngine {
         explosions.clear()
         bloodSplatters.clear()
         snailFlames.clear()
+        orbitalStrikes.clear()
+        empPulses.clear()
+        orbitalStrikeCooldown = 0f
+        empFreezeCooldown = 0f
+        overchargeCooldown = 0f
+        overchargeTimer = 0f
         gold = 0
         killCount = 0
         cannonLevel = 1
@@ -761,6 +893,58 @@ class GameEngine {
         return true
     }
 
+    private fun orbitalStrikeUnlocked(): Boolean = waveManager.waveNumber >= orbitalStrikeUnlockWave
+    private fun empFreezeUnlocked(): Boolean = waveManager.waveNumber >= empFreezeUnlockWave
+    private fun overchargeUnlocked(): Boolean = waveManager.waveNumber >= overchargeUnlockWave
+
+    /** Read by [Hud] to draw the ability bar and decide what a tap on it should do — see [AbilityStatus]. */
+    fun abilityStatuses(): List<AbilityStatus> = listOf(
+        AbilityStatus(Ability.ORBITAL_STRIKE, "Orbital Strike", orbitalStrikeUnlocked(), orbitalStrikeCooldown, orbitalStrikeCooldownSec, requiresTarget = true),
+        AbilityStatus(Ability.EMP_FREEZE, "EMP Freeze", empFreezeUnlocked(), empFreezeCooldown, empFreezeCooldownSec, requiresTarget = false),
+        AbilityStatus(Ability.OVERCHARGE, "Overcharge", overchargeUnlocked(), overchargeCooldown, overchargeCooldownSec, requiresTarget = false)
+    )
+
+    /** Casts one of the two instant (non-targeted) abilities; [castOrbitalStrikeAt] handles the targeted one. */
+    fun castAbility(ability: Ability): Boolean = when (ability) {
+        Ability.EMP_FREEZE -> castEmpFreeze()
+        Ability.OVERCHARGE -> castOvercharge()
+        Ability.ORBITAL_STRIKE -> false
+    }
+
+    /** Deals heavy splash damage centered on [x],[y] — [Hud] collects this point via a tap-to-target mode. */
+    fun castOrbitalStrikeAt(x: Float, y: Float): Boolean {
+        if (state != GameState.PLAYING || !orbitalStrikeUnlocked() || orbitalStrikeCooldown > 0f) return false
+        orbitalStrikeCooldown = orbitalStrikeCooldownSec
+        val radius = orbitalStrikeRadiusFactor * scale
+        for (z in zombies) {
+            if (z.isAlive() && GameMath.distance(z.x, z.y, x, y) <= radius) {
+                z.takeDamage(orbitalStrikeDamage)
+            }
+        }
+        orbitalStrikes.add(OrbitalStrikeEffect(x, y, radius, scale))
+        onOrbitalStrike?.invoke()
+        return true
+    }
+
+    private fun castEmpFreeze(): Boolean {
+        if (state != GameState.PLAYING || !empFreezeUnlocked() || empFreezeCooldown > 0f) return false
+        empFreezeCooldown = empFreezeCooldownSec
+        for (z in zombies) {
+            if (z.isAlive()) z.applySlow(empFreezeSlowFactor, empFreezeDurationSec)
+        }
+        empPulses.add(EmpPulse(castle.x, castle.y, arenaRadius(), scale))
+        onEmpFreeze?.invoke()
+        return true
+    }
+
+    private fun castOvercharge(): Boolean {
+        if (state != GameState.PLAYING || !overchargeUnlocked() || overchargeCooldown > 0f) return false
+        overchargeCooldown = overchargeCooldownSec
+        overchargeTimer = overchargeDurationSec
+        onOvercharge?.invoke()
+        return true
+    }
+
     private fun recomputeCannonStats() {
         val thresholds = intArrayOf(1, 2, 4, 6)
         val explosiveMultiplier = 1f + explosiveLevel * 0.2f
@@ -820,6 +1004,19 @@ class GameEngine {
         for (s in cannonSlots) s.draw(canvas, paint, castle, ring)
         for (s in archerSlots) s.draw(canvas, paint, castle, ring)
         for (e in explosions) e.draw(canvas, paint)
+        for (o in orbitalStrikes) o.draw(canvas, paint)
+        for (p in empPulses) p.draw(canvas, paint)
+
+        // A pulsing gold ring around the weapon ring while Overcharge is active, so the buff
+        // reads as an ongoing state rather than only being visible via the ability bar's timer.
+        if (overchargeTimer > 0f) {
+            val pulse = 0.75f + 0.25f * sin(worldTime * 12f)
+            paint.shader = null
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 5f * scale
+            paint.color = Color.argb((160 * pulse).toInt(), 255, 210, 80)
+            canvas.drawCircle(castle.x, castle.y, ring, paint)
+        }
 
         canvas.restore()
 

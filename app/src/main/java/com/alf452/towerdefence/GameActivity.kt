@@ -26,6 +26,9 @@ class GameActivity : AppCompatActivity() {
         gameView.engine.onBowFire = { soundEngine.playBowShoot() }
         gameView.engine.onZombieKilled = { soundEngine.playZombieDeath() }
         gameView.engine.onCastleHit = { soundEngine.playCastleHit() }
+        gameView.engine.onOrbitalStrike = { soundEngine.playOrbitalStrike() }
+        gameView.engine.onEmpFreeze = { soundEngine.playEmpFreeze() }
+        gameView.engine.onOvercharge = { soundEngine.playOvercharge() }
         setContentView(gameView)
         hideSystemBars()
     }
