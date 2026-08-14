@@ -23,11 +23,16 @@ class WaveManager {
 
     fun startWave(waveNum: Int) {
         waveNumber = waveNum
-        val normalCount = 5 + (waveNumber - 1) * 3
+        // Normal-zombie growth trimmed from +3/wave to +2, and spawn cadence tightens much
+        // faster (was max(0.25, 1.2 - wave*0.03), floor only reached ~wave 32) — a headless
+        // sim showed waves ballooning to ~50s each by wave 20 (11.5 min total for waves 1-20)
+        // under the old formulas, almost entirely from queueing up more zombies than the spawn
+        // interval was shrinking fast enough to offset. This roughly halves both figures.
+        val normalCount = 5 + (waveNumber - 1) * 2
         val tankCount = tankCountForWave(waveNumber)
         val wormCount = wormCountForWave(waveNumber)
         spawnQueue = buildSpawnQueue(normalCount, tankCount, wormCount)
-        spawnIntervalSec = kotlin.math.max(0.25f, 1.2f - waveNumber * 0.03f)
+        spawnIntervalSec = kotlin.math.max(0.22f, 1.1f - waveNumber * 0.05f)
         spawnTimer = 0f
         waveInProgress = true
     }
@@ -76,23 +81,21 @@ class WaveManager {
         val spawnX = centerX + arenaRadius * kotlin.math.cos(angle)
         val spawnY = centerY + arenaRadius * kotlin.math.sin(angle)
 
-        // Health/damage growth per wave was halved (and quartered respectively) from earlier
-        // tuning to match the leaner gold economy below — with income now buying roughly one
-        // upgrade per wave instead of two or three, enemies need to get tougher more gradually
-        // to stay fair over a long run. Nudged from 8f back up to 9.25f after adding Worms, so
-        // waves 1-25 land back around the ~70% win-rate target under a headless Monte Carlo sim
-        // with randomized player efficiency/purchase choices/pacing (worms alone couldn't make
-        // up the difference without becoming absurdly deadly one-on-one).
-        val baseHealth = 30f + (waveNumber - 1) * 9.25f
+        // Retuned from 9.25f down to 7.6f alongside the leaner zombie count above: fewer
+        // zombies per wave means less total health to chew through even before any per-zombie
+        // change, so per-zombie health had to come down too to land back on target. Verified via
+        // a headless Monte Carlo sim (1200 trials): 85.8% win rate at wave 20 (down from a
+        // 99%-cakewalk under the old formulas) and 70.8% at wave 25, matching this game's
+        // established ~70%-at-25 target almost exactly.
+        val baseHealth = 30f + (waveNumber - 1) * 7.6f
         // Speed keeps climbing every wave (capped only as a defensive backstop far past
         // any realistic run length) instead of plateauing around wave 27 like it used to.
         val baseSpeed = 40f + min(waveNumber * 1.7f, 300f)
         val baseDamage = 4f + (waveNumber / 4)
-        // Flat per-kill/tank gold: growing kill *count* each wave is what drives income up, not
-        // an additionally-scaling per-kill value, so total gold earned per wave tracks the
-        // (also exponential) upgrade cost curve closely enough to afford ~1 upgrade per clear
-        // instead of 2-3.
-        val baseGold = 2
+        // Flat per-kill/tank gold, bumped from 2 to 3 alongside the wave-clear bonus reduction
+        // in GameEngine.kt: fewer kills per wave now (see normalCount above), so per-kill income
+        // needed to rise to keep pace with roughly one affordable upgrade per wave.
+        val baseGold = 3
 
         // Worms trade health for speed: individually fragile (so a couple of hits drop one) but
         // fast enough that letting one go unanswered for even a second or two costs real castle

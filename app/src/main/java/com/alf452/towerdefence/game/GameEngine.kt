@@ -505,8 +505,10 @@ class GameEngine {
         if (waveCleared) {
             // Flat, same reasoning as the per-kill gold value in WaveManager: kill count
             // growth alone is enough to keep income rising, so this doesn't need its own
-            // wave-scaling on top of that to reach ~1 affordable upgrade per wave.
-            val bonus = 26
+            // wave-scaling on top of that to reach ~1 affordable upgrade per wave. Nudged from
+            // 26 to 24 alongside WaveManager's pacing/health retune (see baseHealth's comment
+            // there) to land back on the ~70%-win-rate-at-wave-25 target.
+            val bonus = 24
             gold += bonus
             lastWaveGoldEarned = bonus
             waveManager.endWave()
