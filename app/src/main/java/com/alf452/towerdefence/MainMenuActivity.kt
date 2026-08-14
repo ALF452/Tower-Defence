@@ -25,6 +25,9 @@ class MainMenuActivity : AppCompatActivity() {
         findViewById<Button>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        findViewById<Button>(R.id.armoryButton).setOnClickListener {
+            startActivity(Intent(this, ArmoryActivity::class.java))
+        }
     }
 
     override fun onResume() {

@@ -21,7 +21,17 @@ class GameActivity : AppCompatActivity() {
         soundEngine = SoundEngine(this, settings.volume)
         gameView = GameView(this)
         val highScores = HighScores(this)
-        gameView.engine.onGameOver = { waveReached, kills -> highScores.recordRun(waveReached, kills) }
+        val metaProgress = MetaProgress(this)
+        gameView.engine.applyMetaProgress(
+            startingGold = metaProgress.startingGoldBonus(),
+            wallHeadStart = metaProgress.wallHeadStartBonus(),
+            cannonHeadStart = metaProgress.cannonHeadStartBonus(),
+            archerHeadStart = metaProgress.archerHeadStartBonus()
+        )
+        gameView.engine.onGameOver = { waveReached, kills ->
+            highScores.recordRun(waveReached, kills)
+            metaProgress.awardFromRun(waveReached, kills)
+        }
         gameView.engine.onCannonFire = { soundEngine.playCannonFire() }
         gameView.engine.onBowFire = { soundEngine.playBowShoot() }
         gameView.engine.onZombieKilled = { soundEngine.playZombieDeath() }

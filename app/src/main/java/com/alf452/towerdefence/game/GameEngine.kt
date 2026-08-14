@@ -272,6 +272,15 @@ class GameEngine {
     var gold = 0
         private set
 
+    // Permanent cross-run head starts bought in the Armory (see MetaProgress), applied once via
+    // [applyMetaProgress] and then reapplied automatically at the end of every [restart] since
+    // restart() otherwise hard-resets gold/levels to bare defaults with no other hook for a
+    // persistent bonus to survive a new run.
+    private var metaStartingGold = 0
+    private var metaWallHeadStart = 0
+    private var metaCannonHeadStart = 0
+    private var metaArcherHeadStart = 0
+
     var waveManager = WaveManager()
         private set
     var state = GameState.INTERMISSION
@@ -848,13 +857,35 @@ class GameEngine {
         explosiveLevel = 0
         slowLevel = 0
         bleedLevel = 0
-        // recomputeCannonStats()/recomputeArcherStats() below already derive each slot's
-        // `unlocked` from the level fields just reset above, so no separate reset is needed.
-        recomputeCannonStats()
-        recomputeArcherStats()
         castle.resetForNewGame()
         waveManager = WaveManager()
         state = GameState.INTERMISSION
+        // Reapplies Armory head starts on top of the bare defaults just set above (and also
+        // derives each weapon slot's `unlocked` state via recomputeCannonStats()/
+        // recomputeArcherStats(), so no separate reset call is needed for that either).
+        applyStoredMetaBonuses()
+    }
+
+    /**
+     * Called once by [com.alf452.towerdefence.GameActivity] right after construction, before
+     * the very first run (which never calls [restart]). Stores the bonuses so every later
+     * [restart] can reapply them too.
+     */
+    fun applyMetaProgress(startingGold: Int, wallHeadStart: Int, cannonHeadStart: Int, archerHeadStart: Int) {
+        metaStartingGold = startingGold
+        metaWallHeadStart = wallHeadStart
+        metaCannonHeadStart = cannonHeadStart
+        metaArcherHeadStart = archerHeadStart
+        applyStoredMetaBonuses()
+    }
+
+    private fun applyStoredMetaBonuses() {
+        gold += metaStartingGold
+        cannonLevel += metaCannonHeadStart
+        archerLevel += metaArcherHeadStart
+        repeat(metaWallHeadStart) { castle.applyWallUpgrade() }
+        recomputeCannonStats()
+        recomputeArcherStats()
     }
 
     fun wallUpgradeCost(): Int = castle.wallUpgradeCost()

@@ -68,6 +68,17 @@
             android:lineSpacingExtra="1dp" />
 
         <Button
+            android:id="@+id/armoryButton"
+            android:layout_width="170dp"
+            android:layout_height="56dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_button_secondary"
+            android:text="ARMORY"
+            android:textColor="#F0E6D2"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <Button
             android:id="@+id/settingsButton"
             android:layout_width="170dp"
             android:layout_height="56dp"

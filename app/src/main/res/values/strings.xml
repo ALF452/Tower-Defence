@@ -3,4 +3,9 @@
     <string name="app_name">Lunar Defence</string>
     <string name="stats_teaser">Best wave: %1$d  •  Best kills: %2$d</string>
     <string name="volume_percent">%1$d%%</string>
+    <string name="star_dust_balance">Star Dust: %1$d</string>
+    <string name="armory_level">Level %1$d / %2$d</string>
+    <string name="armory_cost">Cost: %1$d</string>
+    <string name="armory_maxed">MAXED</string>
+    <string name="armory_buy">BUY</string>
 </resources>
