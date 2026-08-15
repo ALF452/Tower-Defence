@@ -487,7 +487,9 @@ class Hud {
 
         textPaint.textSize = 21f * tileScale
         textPaint.color = Color.argb(210, 255, 255, 255)
-        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.43f, textPaint)
+        // 0.39 keeps this inside drawBubbleBackground's glossy highlight band (spans 0.08-0.42 of
+        // the tile's height) instead of spilling just past its bottom edge.
+        canvas.drawText(levelLabel, rect.centerX(), rect.top + rect.height() * 0.39f, textPaint)
         canvas.drawText(subtitle, rect.centerX(), rect.top + rect.height() * 0.60f, textPaint)
 
         textPaint.textSize = 30f * tileScale
